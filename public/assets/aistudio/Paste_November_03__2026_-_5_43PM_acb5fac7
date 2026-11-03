@@ -1,0 +1,1264 @@
+# MASTER DEVELOPMENT PROMPT — ST. MARY'S COLLEGE NEGOMBO LMS
+
+## 1. Project Overview
+
+Act as a senior full-stack software engineer, UI/UX designer, database architect, and security specialist.
+
+Build a complete, production-ready, modern **Learning Management System (LMS)** for a Sri Lankan school named:
+
+**St. Mary's College Negombo**
+
+This is a full-stack web application designed for three primary user roles:
+
+1. Students
+2. Teachers
+3. Principal (Super Administrator)
+
+The platform must provide a complete digital learning environment where students can access educational resources, teachers can manage classes and academic activities, and the Principal can control and monitor the entire system.
+
+The application must be functional, not just a UI prototype. All authentication, dashboards, CRUD operations, database interactions, role permissions, and educational features must work correctly.
+
+### Mandatory technology stack
+
+- Backend: Node.js
+- Node.js version: 24.x
+- Backend framework: Express.js
+- Database: MongoDB Atlas
+- Database integration: Mongoose
+- Frontend: HTML5, CSS3, Vanilla JavaScript
+- Authentication: Secure JWT-based authentication
+- Password encryption: bcrypt
+- Icons: Font Awesome or Lucide
+- Animations: CSS animations and lightweight JavaScript
+- Deployment: Vercel
+
+## 2. Strict Project File Structure
+
+The entire project MUST be implemented using exactly these four files in the project root directory.
+
+```text
+st-marys-lms/
+│
+├── package.json
+├── vercel.json
+├── index.js
+└── admin.js
+```
+
+Do not create additional files or folders.
+
+All frontend pages, stylesheets, components, and required browser-side scripts must be served through the existing files.
+
+Suggested architecture:
+
+- `package.json`: Dependencies, scripts, and Node.js 24.x engine requirement.
+- `vercel.json`: Vercel deployment and routing configuration.
+- `index.js`: Main Express backend, MongoDB connection, authentication, APIs, and student/teacher interfaces.
+- `admin.js`: Principal administration dashboard interface and its client-side functionality.
+
+If necessary, serve frontend HTML and CSS through template strings in `index.js`. Serve the Principal dashboard through `admin.js`.
+
+Ensure that this architecture works correctly within Vercel's serverless execution environment.
+
+## 3. UI/UX Design System — Claymorphism
+
+The entire application must follow a premium **Claymorphism UI design style**.
+
+The design should look modern, colorful, friendly, professional, and suitable for a prestigious school.
+
+### Design characteristics
+
+- Soft, rounded, clay-like UI components.
+- Soft inner and outer shadows.
+- Elevated 3D-looking cards.
+- Rounded buttons and input fields.
+- Colorful gradient backgrounds.
+- Smooth hover effects.
+- Subtle floating animations.
+- Beautiful dashboard widgets.
+- Soft pastel color combinations.
+- Modern typography.
+- Consistent spacing and alignment.
+
+### Suggested color palette
+
+- Primary blue: #4F7DF3
+- Royal blue: #3159C9
+- Sky blue: #A9D8FF
+- Light background: #F3F6FF
+- Purple: #9475E8
+- Pink: #F5A5C5
+- Yellow: #FFD66B
+- Green: #70D6A3
+- Dark text: #26324B
+- Secondary text: #75819A
+
+Use a clean white/light-blue background with colorful accents.
+
+### Typography
+
+Use Google Fonts such as:
+
+- Poppins
+- Nunito
+- Inter
+
+Use Poppins or Nunito for headings and Inter for general interface text.
+
+### Animations
+
+Include:
+
+- Smooth page transitions.
+- Animated dashboard cards.
+- Button hover animations.
+- Loading skeletons.
+- Animated progress bars.
+- Floating decorative elements.
+- Modal entrance and exit animations.
+- Sidebar transitions.
+- Notification animations.
+- Subtle background gradients.
+
+Avoid excessive animations that negatively affect performance.
+
+### Responsive design
+
+The application must work properly on:
+
+- Desktop computers.
+- Laptops.
+- Tablets.
+- Android smartphones.
+- iPhones.
+
+Create responsive navigation, collapsible sidebars, mobile-friendly tables, and touch-friendly controls.
+
+---
+
+# 4. Public Landing Page
+
+Create an attractive public homepage for St. Mary's College Negombo.
+
+### Header navigation
+
+Include:
+
+- School logo.
+- Home.
+- About School.
+- Learning Portal.
+- Teachers.
+- Contact.
+- Login button.
+
+Use a modern sticky navigation bar.
+
+### Hero section
+
+Create an attractive hero section with:
+
+Main heading:
+
+"Welcome to St. Mary's College Negombo"
+
+Subheading:
+
+"Empowering Students. Inspiring Excellence. Building Tomorrow."
+
+Description:
+
+"Your digital learning destination — connecting students, teachers, and school administration in one innovative platform."
+
+Buttons:
+
+- Explore Learning Portal
+- Student Login
+- Teacher Login
+
+Include an attractive school-related hero image using a placeholder image URL.
+
+### Homepage sections
+
+1. Welcome to Our School.
+2. About Our Digital Learning Platform.
+3. Our Learning Features.
+4. Student Achievements.
+5. Teacher Highlights.
+6. Latest School Announcements.
+7. Academic Statistics.
+8. Contact Information.
+9. Footer.
+
+Use dummy school information and clearly identifiable sample content.
+
+### Dummy contact details
+
+- School: St. Mary's College Negombo.
+- Phone: +94 31 555 0123.
+- Email: info@stmarysnegombo.example
+- Address: Negombo, Western Province, Sri Lanka.
+
+These are demonstration details, not verified official contact information.
+
+---
+
+# 5. Authentication System
+
+Implement a complete and secure authentication system.
+
+There must be three separate login experiences:
+
+1. Student Login.
+2. Teacher Login.
+3. Principal Login.
+
+### Login page design
+
+Create a modern login interface with:
+
+- School logo.
+- Welcome heading.
+- Email or username field.
+- Password field.
+- Show/hide password option.
+- Remember me option.
+- Forgot password link.
+- Login button.
+- Role-specific login selection.
+
+Use a beautiful Claymorphism design.
+
+### Authentication requirements
+
+- Hash passwords using bcrypt.
+- Never store plaintext passwords.
+- Validate all incoming data.
+- Use secure JWT authentication.
+- Prefer HttpOnly, Secure, SameSite cookies for browser authentication.
+- Protect private routes using authentication middleware.
+- Implement role-based access control.
+- Implement logout.
+- Implement session expiration.
+- Prevent unauthorized dashboard access.
+- Add login rate limiting.
+- Avoid revealing whether an email or password was incorrect.
+- Never expose password hashes or JWT secrets through APIs.
+
+### User roles and permissions
+
+**Student**
+
+Can access only their own learning information and permitted class resources.
+
+**Teacher**
+
+Can manage assigned classes, subjects, students, assignments, attendance, and learning resources.
+
+**Principal**
+
+Has full administrative access to the entire LMS, including all students, teachers, classes, academic records, announcements, and system settings.
+
+Never trust a role supplied by the frontend. Verify permissions on the backend for every protected API request.
+
+---
+
+# 6. Student Dashboard
+
+Create a beautiful, personalized student dashboard.
+
+### Dashboard welcome section
+
+Example:
+
+"Good Morning, Alex! 👋"
+
+"Ready to learn something amazing today?"
+
+Display:
+
+- Student profile picture.
+- Full name.
+- Student ID.
+- Grade.
+- Class.
+- Academic year.
+
+### Dashboard statistics
+
+Display attractive statistic cards:
+
+- Total Subjects.
+- Pending Assignments.
+- Completed Assignments.
+- Attendance Percentage.
+- Average Marks.
+- Upcoming Examinations.
+
+### Student sidebar navigation
+
+Include:
+
+1. Dashboard.
+2. My Subjects.
+3. Learning Materials.
+4. Assignments.
+5. Online Examinations.
+6. My Results.
+7. Attendance.
+8. Timetable.
+9. Announcements.
+10. My Profile.
+11. Settings.
+12. Logout.
+
+### My Subjects
+
+Display enrolled subjects in colorful Claymorphism cards.
+
+Each subject card should contain:
+
+- Subject name.
+- Subject teacher.
+- Subject image or icon.
+- Short description.
+- Available learning materials.
+- Assignment count.
+- Progress percentage.
+- Open Subject button.
+
+Use realistic sample subjects:
+
+- Mathematics.
+- Science.
+- English.
+- Sinhala.
+- History.
+- ICT.
+- Buddhism.
+- Geography.
+
+### Learning Materials
+
+Students should be able to:
+
+- Browse subject-wise materials.
+- View uploaded PDFs.
+- Access external learning links.
+- Watch educational videos.
+- Download permitted resources.
+- Search and filter materials.
+
+### Assignments
+
+Implement a complete assignment system.
+
+Students should be able to:
+
+- View available assignments.
+- Read assignment instructions.
+- See due dates.
+- Download attached resources.
+- Submit assignments.
+- Upload supported files or provide submission links.
+- View submission status.
+- View teacher feedback.
+- View marks and grades.
+
+Assignment statuses:
+
+- Not Started.
+- In Progress.
+- Submitted.
+- Late.
+- Graded.
+
+### Online Examinations
+
+Create an online examination interface.
+
+Features:
+
+- Display available examinations.
+- Examination instructions.
+- Countdown timer.
+- Multiple-choice questions.
+- True/False questions.
+- Short-answer questions.
+- Question navigation.
+- Automatic saving of answers.
+- Submit examination button.
+- Automatic marking of objective questions.
+- Examination result display when authorized.
+
+The backend must enforce examination start/end times and submission rules. Do not rely on a client-side countdown as the security mechanism.
+
+### Results and Grades
+
+Display:
+
+- Subject-wise marks.
+- Examination results.
+- Assignment marks.
+- Grade classifications.
+- Academic progress.
+- Performance charts.
+
+Use Chart.js if required.
+
+### Attendance
+
+Display:
+
+- Present days.
+- Absent days.
+- Late arrivals.
+- Attendance percentage.
+- Monthly attendance calendar.
+
+### Timetable
+
+Create a colorful weekly timetable showing:
+
+- Subject.
+- Teacher.
+- Time.
+- Classroom.
+- Day.
+
+### Student Profile
+
+Allow students to view their personal details and update permitted profile fields.
+
+Students must not be allowed to modify sensitive academic records or their assigned class.
+
+---
+
+# 7. Teacher Dashboard
+
+Create a separate professional teacher dashboard.
+
+### Teacher welcome section
+
+Example:
+
+"Welcome Back, Mr. John! 👋"
+
+Display:
+
+- Teacher name.
+- Teacher ID.
+- Profile photo.
+- Assigned subjects.
+- Assigned classes.
+
+### Teacher dashboard statistics
+
+- Total Students.
+- Assigned Classes.
+- Active Assignments.
+- Pending Submissions.
+- Upcoming Examinations.
+- Average Class Performance.
+
+### Teacher sidebar
+
+Include:
+
+1. Dashboard.
+2. My Classes.
+3. My Students.
+4. Subjects.
+5. Learning Materials.
+6. Assignments.
+7. Submissions.
+8. Examinations.
+9. Attendance Management.
+10. Results Management.
+11. Timetable.
+12. Announcements.
+13. My Profile.
+14. Logout.
+
+### Class Management
+
+Teachers should be able to:
+
+- View assigned classes.
+- View students in their classes.
+- Filter students.
+- Search by name or student ID.
+- View individual student profiles.
+- View class statistics.
+
+Teachers must not be able to access classes they are not assigned to.
+
+### Learning Material Management
+
+Teachers can:
+
+- Create learning materials.
+- Add titles and descriptions.
+- Assign materials to subjects.
+- Select target classes.
+- Add PDF/document URLs.
+- Add educational video links.
+- Edit materials.
+- Delete their own materials.
+
+### Assignment Management
+
+Teachers can:
+
+- Create assignments.
+- Set titles and instructions.
+- Select subjects.
+- Select target classes.
+- Set due dates.
+- Attach learning resources.
+- View student submissions.
+- Download or open submissions.
+- Grade assignments.
+- Add feedback.
+- Update assignment status.
+
+### Examination Management
+
+Teachers can:
+
+- Create examinations.
+- Add questions.
+- Configure examination duration.
+- Set total marks.
+- Set examination dates.
+- Set start and end times.
+- Assign examinations to classes.
+- View submitted examinations.
+- Review written answers.
+- Mark subjective answers.
+- Publish results.
+
+### Attendance Management
+
+Teachers can:
+
+- Select a class.
+- Select a date.
+- View enrolled students.
+- Mark students Present, Absent, or Late.
+- Edit attendance records.
+- View attendance summaries.
+
+Prevent duplicate attendance entries for the same student, class, and date.
+
+### Results Management
+
+Teachers can:
+
+- Add marks.
+- Update marks.
+- Assign grades.
+- View class performance.
+- Generate subject-wise performance summaries.
+
+All changes must be recorded with the teacher's identity and timestamps.
+
+---
+
+# 8. Principal Dashboard — Full Administration
+
+The Principal dashboard is the most important administrative component.
+
+It must have a premium, professional, visually impressive interface.
+
+Use a dedicated dashboard layout with a collapsible sidebar, top navigation, notification center, profile menu, and detailed data tables.
+
+### Principal dashboard overview
+
+Welcome message:
+
+"Welcome to the Administration Dashboard"
+
+"St. Mary's College Negombo — School Management Center"
+
+### Main statistics
+
+Display:
+
+- Total Students.
+- Total Teachers.
+- Total Classes.
+- Total Subjects.
+- Active Assignments.
+- Total Learning Materials.
+- Average Attendance.
+- Overall Academic Performance.
+
+Use animated number counters and colorful cards.
+
+### Principal sidebar
+
+Include:
+
+1. Overview.
+2. Student Management.
+3. Teacher Management.
+4. Class Management.
+5. Subject Management.
+6. Academic Management.
+7. Assignment Management.
+8. Examination Management.
+9. Attendance Management.
+10. Results Management.
+11. Learning Resources.
+12. School Announcements.
+13. Timetable Management.
+14. Reports & Analytics.
+15. User Accounts.
+16. System Settings.
+17. Activity Logs.
+18. Logout.
+
+### Student Management
+
+Principal can:
+
+- Register new students.
+- Edit student information.
+- Delete or deactivate student accounts.
+- Assign student IDs.
+- Assign classes.
+- Assign academic years.
+- View student profiles.
+- Search and filter students.
+- Import students using CSV.
+- Export student records.
+
+Student fields:
+
+- Full name.
+- Student ID.
+- Email.
+- Password or account activation workflow.
+- Date of birth.
+- Gender.
+- Address.
+- Parent/guardian name.
+- Parent/guardian contact.
+- Grade.
+- Class.
+- Academic year.
+- Profile image.
+- Account status.
+
+### Teacher Management
+
+Principal can:
+
+- Create teacher accounts.
+- Edit teacher profiles.
+- Assign teacher IDs.
+- Assign subjects.
+- Assign classes.
+- Deactivate accounts.
+- Reset passwords through a secure process.
+- View teaching assignments.
+
+Teacher fields:
+
+- Full name.
+- Teacher ID.
+- Email.
+- Phone.
+- Address.
+- Qualification.
+- Assigned subjects.
+- Assigned classes.
+- Profile image.
+- Account status.
+
+### Class Management
+
+Principal can:
+
+- Create classes.
+- Edit classes.
+- Delete or archive classes.
+- Assign class teachers.
+- Assign students.
+- View class statistics.
+
+Example classes:
+
+- Grade 6A.
+- Grade 6B.
+- Grade 7A.
+- Grade 7B.
+- Grade 8A.
+- Grade 9A.
+- Grade 10A.
+- Grade 11A.
+- Grade 12A.
+- Grade 13A.
+
+### Subject Management
+
+Principal can:
+
+- Create subjects.
+- Edit subjects.
+- Delete or deactivate subjects.
+- Assign teachers.
+- Assign subjects to classes.
+- View subject statistics.
+
+### Academic Management
+
+Create academic-year management.
+
+Features:
+
+- Set current academic year.
+- Manage school terms.
+- Configure grades.
+- Manage class promotions.
+- Archive previous academic years.
+
+### Assignment and Examination Oversight
+
+Principal can:
+
+- View all assignments.
+- View all examinations.
+- Monitor submission statistics.
+- View examination schedules.
+- Review academic activity.
+- Monitor teacher activity.
+
+### School Announcements
+
+Principal can publish school-wide announcements.
+
+Fields:
+
+- Title.
+- Description.
+- Category.
+- Image.
+- Target audience.
+- Publish date.
+- Expiration date.
+- Status.
+
+Target audiences:
+
+- Everyone.
+- Students.
+- Teachers.
+- Specific classes.
+
+### Reports & Analytics
+
+Generate detailed reports:
+
+- Student enrollment reports.
+- Teacher reports.
+- Attendance reports.
+- Assignment completion reports.
+- Examination performance reports.
+- Class performance reports.
+- Subject performance reports.
+
+Provide charts and export functionality where appropriate.
+
+### Activity Logs
+
+Track important system actions:
+
+- User creation.
+- User deletion.
+- Login attempts.
+- Assignment creation.
+- Result updates.
+- Attendance modifications.
+- Announcement publishing.
+- Administrative changes.
+
+Store the acting user's ID, action, affected resource, timestamp, and relevant audit metadata.
+
+---
+
+# 9. MongoDB Database Architecture
+
+Use MongoDB Atlas with Mongoose.
+
+Database name:
+
+`stmarys_lms`
+
+The MongoDB URI must be read from the environment variable:
+
+`process.env.MONGODB_URI`
+
+Never hardcode database credentials.
+
+### Database connection requirements
+
+- Create a reusable MongoDB connection function.
+- Cache the Mongoose connection across Vercel serverless invocations.
+- Avoid creating a new connection for every API request.
+- Handle connection errors gracefully.
+- Use appropriate connection pooling.
+- Set reasonable timeouts.
+- Do not terminate the database connection after each request.
+
+### Required collections
+
+Create properly structured Mongoose models for:
+
+1. Users.
+2. Students.
+3. Teachers.
+4. Classes.
+5. Subjects.
+6. Enrollments.
+7. Assignments.
+8. Submissions.
+9. LearningMaterials.
+10. Examinations.
+11. Questions.
+12. ExamAttempts.
+13. Attendance.
+14. Results.
+15. Timetables.
+16. Announcements.
+17. Notifications.
+18. AcademicYears.
+19. ActivityLogs.
+20. SystemSettings.
+
+### Schema design requirements
+
+Use:
+
+- ObjectId references.
+- Proper validation.
+- Required fields.
+- Unique indexes.
+- Compound indexes.
+- Timestamps.
+- Pagination-friendly queries.
+- Appropriate schema relationships.
+
+Avoid unnecessarily duplicating large documents.
+
+Use pagination for large datasets rather than loading every student, assignment, or result at once.
+
+### Dynamic assets optimization
+
+Images, PDFs, documents, and other media must be handled efficiently.
+
+Do not store large binary files directly inside MongoDB documents.
+
+Instead, store asset metadata and external URLs.
+
+Suggested asset structure:
+
+- URL.
+- Original filename.
+- MIME type.
+- File size.
+- Storage provider.
+- Uploaded by.
+- Associated subject.
+- Associated class.
+- Creation date.
+
+Use optimized image URLs from a CDN or external image provider for sample images.
+
+Design the application so Cloudinary or another object-storage provider can be integrated later using environment variables.
+
+Use lazy loading for images, optimized thumbnails, and appropriate caching headers.
+
+Do not repeatedly download or encode the same assets.
+
+### Important database indexes
+
+Create indexes for:
+
+- User email.
+- User role.
+- Student ID.
+- Teacher ID.
+- Class ID.
+- Subject ID.
+- Assignment due dates.
+- Submission student and assignment IDs.
+- Attendance student/class/date.
+- Examination class and schedule.
+- Announcement publication date.
+
+Use compound indexes where appropriate.
+
+---
+
+# 10. Backend API Architecture
+
+Create RESTful APIs using Express.js.
+
+Use consistent JSON responses.
+
+Example:
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": {}
+}
+```
+
+Example error:
+
+```json
+{
+  "success": false,
+  "message": "You are not authorized to perform this action"
+}
+```
+
+### Authentication APIs
+
+- POST /api/auth/login
+- POST /api/auth/logout
+- GET /api/auth/me
+- POST /api/auth/forgot-password
+- POST /api/auth/reset-password
+
+### Student APIs
+
+- GET /api/student/dashboard
+- GET /api/student/profile
+- GET /api/student/subjects
+- GET /api/student/materials
+- GET /api/student/assignments
+- POST /api/student/submissions
+- GET /api/student/results
+- GET /api/student/attendance
+- GET /api/student/timetable
+- GET /api/student/announcements
+
+### Teacher APIs
+
+- GET /api/teacher/dashboard
+- GET /api/teacher/classes
+- GET /api/teacher/students
+- POST /api/teacher/materials
+- PUT /api/teacher/materials/:id
+- DELETE /api/teacher/materials/:id
+- POST /api/teacher/assignments
+- GET /api/teacher/submissions
+- PUT /api/teacher/submissions/:id/grade
+- POST /api/teacher/examinations
+- POST /api/teacher/attendance
+- POST /api/teacher/results
+
+### Principal APIs
+
+- GET /api/admin/dashboard
+- GET /api/admin/students
+- POST /api/admin/students
+- PUT /api/admin/students/:id
+- DELETE /api/admin/students/:id
+- GET /api/admin/teachers
+- POST /api/admin/teachers
+- PUT /api/admin/teachers/:id
+- DELETE /api/admin/teachers/:id
+- CRUD /api/admin/classes
+- CRUD /api/admin/subjects
+- CRUD /api/admin/academic-years
+- CRUD /api/admin/announcements
+- GET /api/admin/reports
+- GET /api/admin/activity-logs
+- GET /api/admin/settings
+
+Implement additional endpoints whenever required by the actual UI.
+
+Every API must validate the authenticated user's role and ownership permissions.
+
+Use pagination, filtering, sorting, and input validation.
+
+---
+
+# 11. Security Requirements
+
+Security is essential because this platform handles student and academic information.
+
+Implement:
+
+- bcrypt password hashing.
+- Secure JWT handling.
+- HttpOnly cookies.
+- CSRF protection where applicable.
+- Helmet security headers.
+- Rate limiting.
+- Input sanitization.
+- MongoDB injection protection.
+- XSS prevention.
+- CORS restrictions.
+- Role-based authorization.
+- File upload restrictions if uploads are supported.
+- Secure password reset workflow.
+- Proper error handling.
+
+Never expose:
+
+- MongoDB connection strings.
+- JWT secrets.
+- Password hashes.
+- Internal server stack traces.
+- Private student information to unauthorized users.
+
+The Principal account must be created through a secure one-time initialization process using environment variables or a protected setup procedure.
+
+Do not create a publicly accessible default Principal account with a hardcoded password.
+
+Protect administrative account creation and prevent students or teachers from changing their roles.
+
+---
+
+# 12. Vercel Deployment Requirements
+
+This application will be deployed on Vercel.
+
+Ensure compatibility with Vercel's Node.js serverless functions.
+
+### package.json
+
+Requirements:
+
+- Set `"engines": { "node": "24.x" }`.
+- Include all necessary production dependencies.
+- Include a suitable start script.
+- Avoid unnecessary dependencies.
+- Ensure compatible package versions.
+
+### vercel.json
+
+Configure the project so:
+
+- The Express application is correctly routed.
+- API routes work.
+- Public routes work.
+- Dashboard routes work.
+- Static assets are served correctly.
+- Client-side navigation does not produce unexpected 404 errors.
+
+Use a Vercel-compatible configuration rather than relying on a traditional always-running Express server.
+
+Export the Express application from `index.js` correctly.
+
+Do not depend on manually starting a persistent server in the Vercel serverless environment.
+
+### Environment variables
+
+Configure these in Vercel:
+
+| Variable | Purpose |
+|---|---|
+| MONGODB_URI | MongoDB Atlas connection |
+| JWT_SECRET | Secure JWT signing secret |
+| JWT_EXPIRES_IN | Token expiration |
+| PRINCIPAL_SETUP_SECRET | Secure initial Principal setup |
+| APP_URL | Production application URL |
+| NODE_ENV | production |
+
+Optional:
+
+| Variable | Purpose |
+|---|---|
+| CLOUDINARY_CLOUD_NAME | Image hosting |
+| CLOUDINARY_API_KEY | Cloudinary authentication |
+| CLOUDINARY_API_SECRET | Cloudinary authentication |
+
+Never commit real environment secrets into the source code.
+
+Include clear instructions for configuring the environment variables in Vercel.
+
+---
+
+# 13. Dummy Data and Initial Setup
+
+Populate the platform with attractive demonstration data.
+
+Use fictional names and sample information.
+
+Create:
+
+- 1 Principal account through the secure initialization process.
+- 5 sample teachers.
+- 30 sample students.
+- 8 sample classes.
+- 10 sample subjects.
+- 15 sample learning materials.
+- 10 sample assignments.
+- 5 sample examinations.
+- Sample attendance records.
+- Sample results.
+- 5 school announcements.
+- Sample timetable entries.
+
+Clearly distinguish demo data from real school records.
+
+Provide a safe, idempotent seed mechanism so that repeated initialization does not create duplicate records.
+
+Do not expose production credentials or demo passwords in publicly accessible API responses.
+
+Use placeholder images from reliable image providers. If an image fails to load, show a beautiful default avatar or fallback image.
+
+---
+
+# 14. Performance Optimization
+
+The LMS should load quickly, even on slower Sri Lankan mobile internet connections.
+
+Implement:
+
+- Lightweight frontend assets.
+- Lazy loading.
+- Image optimization.
+- Efficient MongoDB queries.
+- Database connection reuse.
+- Pagination.
+- Browser caching.
+- Minimal JavaScript dependencies.
+- Loading skeletons.
+- Debounced search.
+- Optimized CSS.
+- Responsive images.
+- Proper API error handling.
+
+Avoid unnecessary database queries.
+
+Load dashboard statistics efficiently.
+
+Do not fetch all database records just to calculate a few dashboard statistics. Use MongoDB aggregation where appropriate.
+
+---
+
+# 15. Additional Premium Features
+
+Add these features to make the LMS feel like a professional educational platform.
+
+### Notification Center
+
+- Assignment notifications.
+- Examination reminders.
+- New learning materials.
+- Teacher feedback notifications.
+- School announcements.
+- Attendance updates.
+
+### Global Search
+
+Provide search functionality for permitted resources.
+
+### User Profile Dropdown
+
+Include:
+
+- Profile.
+- Account settings.
+- Notifications.
+- Logout.
+
+### Empty States
+
+Design beautiful empty states for:
+
+- No assignments.
+- No learning materials.
+- No announcements.
+- No examination results.
+
+### Loading States
+
+Show animated skeleton placeholders while data loads.
+
+### Confirmation Modals
+
+Before destructive actions such as deleting a student, teacher, class, or assignment, display a confirmation dialog.
+
+### Toast Notifications
+
+Display success, warning, and error messages using elegant animated toast notifications.
+
+### Error Pages
+
+Create attractive:
+
+- 404 page.
+- 403 unauthorized page.
+- 500 server error page.
+- Database connection error state.
+
+---
+
+# 16. Final Quality Assurance
+
+Before considering the project complete, verify the following:
+
+1. All four required files are present.
+2. Node.js 24.x is configured.
+3. MongoDB Atlas connection works.
+4. All database schemas are implemented.
+5. Student login works.
+6. Teacher login works.
+7. Principal login works.
+8. Each role sees the correct dashboard.
+9. Role-based API permissions work.
+10. CRUD operations work correctly.
+11. Assignments can be created and submitted.
+12. Teachers can grade submissions.
+13. Examinations function correctly.
+14. Attendance can be recorded.
+15. Results can be managed.
+16. Announcements can be published.
+17. Notifications work.
+18. The interface is responsive.
+19. Claymorphism design is consistent.
+20. No major console errors exist.
+21. No broken frontend routes exist.
+22. Vercel deployment configuration is valid.
+23. Database connection reuse works in serverless execution.
+24. Secrets are never exposed to the browser.
+25. Sample data can be initialized safely.
+
+Do not leave buttons as decorative elements. Every visible button, form, navigation link, search field, dropdown, and action must have a working implementation or an explicitly disabled state.
+
+---
+
+# 17. Final Deliverables
+
+Generate the complete source code for exactly these four files:
+
+1. `package.json`
+2. `vercel.json`
+3. `index.js`
+4. `admin.js`
+
+Provide the complete code for each file.
+
+Do not provide incomplete snippets, pseudocode, placeholder function implementations, or instructions such as "add the remaining code here."
+
+Do not omit essential backend logic.
+
+Do not replace working functionality with static demo content.
+
+Ensure all frontend features communicate with the backend APIs and persist their data in MongoDB Atlas.
+
+The final application must be visually impressive, secure, responsive, fully functional, and suitable for demonstration to the client.
+
+**Overall design objective:** Create an LMS that looks like a premium modern SaaS educational platform while maintaining the identity and professionalism of St. Mary's College Negombo.
+
+**Overall technical objective:** Deliver a complete Node.js 24.x + Express + MongoDB full-stack application that can be deployed directly to Vercel using only the four specified files and environment variables.

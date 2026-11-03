@@ -1,0 +1,25 @@
+{
+  "name": "st-marys-college-negombo-lms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Learning Management System for St. Mary's College Negombo",
+  "main": "index.js",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "node index.js",
+    "start": "node index.js",
+    "build": "node -c index.js admin.js",
+    "lint": "node -c index.js admin.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.5"
+  }
+}

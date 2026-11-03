@@ -1,0 +1,6 @@
+{
+  "name": "St. Mary's College Negombo LMS",
+  "description": "Comprehensive Learning Management System with Claymorphism UI for Students, Teachers, and Principal at St. Mary's College Negombo",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
