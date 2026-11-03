@@ -442,7 +442,11 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
     (function() {
       try {
         var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
-        var customFetch = function(url, options) {
+        if (!nativeFetch && window.Window && window.Window.prototype && window.Window.prototype.fetch) {
+          nativeFetch = window.Window.prototype.fetch.bind(window);
+        }
+
+        function safeFetch(url, options) {
           options = options || {};
           var token = null;
           try {
@@ -465,16 +469,29 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
             }
           }
           options.credentials = options.credentials || 'include';
-          return nativeFetch ? nativeFetch(url, options) : fetch(url, options);
-        };
-        var propDesc = {
-          get: function() { return customFetch; },
-          set: function(fn) { nativeFetch = fn; },
+          if (nativeFetch) {
+            return nativeFetch(url, options);
+          }
+          return Promise.reject(new Error('Fetch API unavailable'));
+        }
+
+        Object.defineProperty(window, 'fetch', {
+          value: safeFetch,
+          writable: true,
           configurable: true,
           enumerable: true
-        };
-        try { Object.defineProperty(window, 'fetch', propDesc); } catch (_) {}
-        try { if (window.Window && window.Window.prototype) Object.defineProperty(window.Window.prototype, 'fetch', propDesc); } catch (_) {}
+        });
+
+        if (window.Window && window.Window.prototype) {
+          try {
+            Object.defineProperty(window.Window.prototype, 'fetch', {
+              value: safeFetch,
+              writable: true,
+              configurable: true,
+              enumerable: true
+            });
+          } catch (_) {}
+        }
       } catch (e) {}
     })();
   </script>
