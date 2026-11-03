@@ -1511,7 +1511,18 @@ const CLAY_BASE_STYLES = `
       --clay-shadow-in: inset 3px 3px 6px rgba(163, 177, 198, 0.3), inset -3px -3px 6px rgba(255, 255, 255, 0.8);
       --clay-border: 1px solid rgba(255, 255, 255, 0.8);
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Nunito', sans-serif; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Nunito', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    html, body {
+      overflow-x: hidden;
+      width: 100%;
+      -webkit-text-size-adjust: 100%;
+    }
     body {
       background-color: var(--light-bg);
       background-image: 
@@ -1539,7 +1550,8 @@ const CLAY_BASE_STYLES = `
       background: linear-gradient(135deg, var(--primary-blue), var(--royal-blue));
       color: white;
       border: none;
-      padding: 10px 22px;
+      padding: 10px 20px;
+      min-height: 44px;
       border-radius: 16px;
       font-weight: 700;
       font-size: 0.95rem;
@@ -1550,10 +1562,14 @@ const CLAY_BASE_STYLES = `
       box-shadow: 4px 4px 10px rgba(49, 89, 201, 0.35), -2px -2px 6px rgba(255, 255, 255, 0.6), inset 1px 1px 2px rgba(255, 255, 255, 0.4);
       transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       text-decoration: none;
+      touch-action: manipulation;
     }
     .clay-btn:hover {
       transform: translateY(-2px);
       box-shadow: 6px 6px 14px rgba(49, 89, 201, 0.45);
+    }
+    .clay-btn:active {
+      transform: translateY(1px);
     }
     .clay-btn-secondary {
       background: #FFFFFF;
@@ -1563,19 +1579,21 @@ const CLAY_BASE_STYLES = `
     .clay-btn-secondary:hover { background: #F0F4FF; color: var(--royal-blue); }
     .clay-btn-success { background: linear-gradient(135deg, #70D6A3, #28A745); color: white; }
     .clay-btn-danger { background: linear-gradient(135deg, #FF6B8B, #E83E8C); color: white; }
-    .clay-input {
+    .clay-input, select.clay-input {
       width: 100%;
+      min-height: 44px;
       background: #F3F6FF;
       border: 1px solid rgba(169, 216, 255, 0.4);
       border-radius: 14px;
       padding: 10px 16px;
-      font-size: 0.95rem;
+      font-size: 16px; /* Prevents auto-zoom on mobile browsers */
       color: var(--dark-text);
       box-shadow: var(--clay-shadow-in);
       outline: none;
       transition: all 0.2s ease;
+      touch-action: manipulation;
     }
-    .clay-input:focus {
+    .clay-input:focus, select.clay-input:focus {
       border-color: var(--primary-blue);
       box-shadow: inset 3px 3px 6px rgba(79, 125, 243, 0.15), 0 0 0 3px rgba(79, 125, 243, 0.2);
     }
@@ -1595,18 +1613,103 @@ const CLAY_BASE_STYLES = `
     .badge-yellow { background: #FFF8E1; color: #B78103; }
     .badge-purple { background: #F0EBFC; color: #5B2C6F; }
 
+    /* Action icon buttons */
+    .action-icon-btn {
+      min-width: 44px;
+      min-height: 44px;
+      border-radius: 14px;
+      background: white;
+      border: var(--clay-border);
+      box-shadow: var(--clay-shadow-out-sm);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--dark-text);
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      touch-action: manipulation;
+    }
+    .action-icon-btn:hover {
+      transform: translateY(-2px);
+      color: var(--royal-blue);
+    }
+
+    /* Mobile menu drawer & backdrop */
+    .mobile-menu-toggle {
+      display: none;
+    }
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(38, 50, 75, 0.5);
+      backdrop-filter: blur(4px);
+      z-index: 1050;
+      transition: opacity 0.25s ease;
+    }
+    .sidebar-backdrop.open {
+      display: block;
+    }
+
+    /* Standard Responsive Table Container */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 20px;
+      background: white;
+      box-shadow: var(--clay-shadow-out);
+      padding: 6px;
+      margin-bottom: 20px;
+    }
+    .table-container table, .clay-card > table {
+      width: 100%;
+      min-width: 580px;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    /* Global Responsive Adjustments */
+    @media (max-width: 640px) {
+      .clay-card {
+        border-radius: 20px;
+      }
+      .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+        gap: 12px !important;
+      }
+      .stat-card {
+        padding: 14px 12px !important;
+        gap: 10px !important;
+      }
+      .stat-icon {
+        width: 42px !important;
+        height: 42px !important;
+        font-size: 1.1rem !important;
+      }
+      .form-row {
+        grid-template-columns: 1fr !important;
+      }
+    }
+
     /* Toast */
     #toast-container {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
-      z-index: 2000;
+      bottom: 20px;
+      right: 20px;
+      left: 20px;
+      max-width: 380px;
+      margin-left: auto;
+      z-index: 2100;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
+      pointer-events: none;
     }
     .toast {
-      padding: 14px 20px;
+      padding: 14px 18px;
       border-radius: 16px;
       background: white;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15), var(--clay-shadow-out);
@@ -1616,7 +1719,7 @@ const CLAY_BASE_STYLES = `
       font-weight: 700;
       font-size: 0.9rem;
       border-left: 5px solid var(--royal-blue);
-      max-width: 380px;
+      pointer-events: auto;
     }
     .toast.success { border-left-color: #28A745; }
     .toast.error { border-left-color: #E83E8C; }
@@ -1643,6 +1746,7 @@ function renderLandingPage(currentUser) {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 16px;
     }
     .nav-links {
       display: flex;
@@ -1658,87 +1762,136 @@ function renderLandingPage(currentUser) {
     }
     .nav-links a:hover { color: var(--royal-blue); }
 
+    .mobile-nav-toggle {
+      display: none;
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: white;
+      border: var(--clay-border);
+      box-shadow: var(--clay-shadow-out-sm);
+      align-items: center;
+      justify-content: center;
+      color: var(--royal-blue);
+      font-size: 1.2rem;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .landing-mobile-menu {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(14px);
+      padding: 18px 24px;
+      border-bottom: 1px solid #EDF2F9;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      position: sticky;
+      top: 72px;
+      z-index: 499;
+    }
+    .landing-mobile-menu.open {
+      display: flex;
+    }
+    .landing-mobile-menu a {
+      text-decoration: none;
+      color: var(--dark-text);
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 8px 4px;
+    }
+
     .hero-section {
-      padding: 60px 36px;
+      padding: clamp(32px, 6vw, 60px) clamp(16px, 4vw, 36px);
       max-width: 1300px;
       margin: 0 auto;
       display: grid;
       grid-template-columns: 1.2fr 0.8fr;
       align-items: center;
-      gap: 40px;
+      gap: clamp(24px, 4vw, 40px);
     }
     .hero-content h1 {
       font-family: 'Poppins', sans-serif;
-      font-size: 3rem;
+      font-size: clamp(1.8rem, 4.5vw, 3rem);
       font-weight: 800;
       color: var(--royal-blue);
       line-height: 1.15;
       margin-bottom: 16px;
+      text-wrap: balance;
     }
     .hero-content h2 {
-      font-size: 1.3rem;
+      font-size: clamp(1.05rem, 2.5vw, 1.3rem);
       color: var(--primary-blue);
       font-weight: 700;
       margin-bottom: 20px;
     }
     .hero-content p {
-      font-size: 1.1rem;
+      font-size: clamp(0.95rem, 2vw, 1.1rem);
       color: var(--secondary-text);
       line-height: 1.6;
       margin-bottom: 30px;
     }
     .hero-buttons {
       display: flex;
-      gap: 16px;
+      gap: 14px;
       flex-wrap: wrap;
     }
 
     .hero-card {
-      padding: 30px;
+      padding: clamp(20px, 4vw, 30px);
       border-radius: 32px;
       text-align: center;
     }
 
     .section-wrap {
       max-width: 1300px;
-      margin: 60px auto;
-      padding: 0 36px;
+      margin: 40px auto;
+      padding: 0 clamp(16px, 4vw, 36px);
     }
     .section-head {
       text-align: center;
-      margin-bottom: 40px;
+      margin-bottom: 36px;
     }
     .section-head h2 {
       font-family: 'Poppins', sans-serif;
-      font-size: 2.2rem;
+      font-size: clamp(1.5rem, 3.5vw, 2.2rem);
       color: var(--royal-blue);
       font-weight: 800;
     }
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
     }
     .feature-item {
-      padding: 28px;
+      padding: clamp(20px, 3vw, 28px);
       border-radius: 24px;
       text-align: center;
     }
     .feature-icon {
-      width: 64px;
-      height: 64px;
+      width: 60px;
+      height: 60px;
       border-radius: 20px;
-      margin: 0 auto 18px;
+      margin: 0 auto 16px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.6rem;
+      font-size: 1.5rem;
       box-shadow: var(--clay-shadow-out-sm);
+    }
+
+    .about-grid-card {
+      padding: clamp(24px, 4vw, 40px);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(20px, 4vw, 36px);
+      align-items: center;
     }
 
     footer {
       background: white;
-      padding: 40px 36px;
+      padding: 40px clamp(16px, 4vw, 36px);
       border-top: var(--clay-border);
       margin-top: 60px;
       box-shadow: 0 -4px 20px rgba(163, 177, 198, 0.2);
@@ -1747,6 +1900,13 @@ function renderLandingPage(currentUser) {
       .hero-section { grid-template-columns: 1fr; text-align: center; }
       .hero-buttons { justify-content: center; }
       .nav-links { display: none; }
+      .mobile-nav-toggle { display: inline-flex; }
+      .nav-bar { padding: 12px 18px; }
+      .about-grid-card { grid-template-columns: 1fr !important; }
+    }
+    @media (max-width: 480px) {
+      .hero-buttons { flex-direction: column; align-items: stretch; }
+      .hero-buttons .clay-btn { width: 100%; justify-content: center; }
     }
   </style>
 </head>
@@ -1755,11 +1915,11 @@ function renderLandingPage(currentUser) {
   <!-- Navigation -->
   <nav class="nav-bar">
     <div style="display:flex; align-items:center; gap:12px;">
-      <div style="width:42px; height:42px; border-radius:12px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); display:flex; align-items:center; justify-content:center; color:#FFD66B; font-size:1.2rem; box-shadow:var(--clay-shadow-out-sm);">
+      <div style="width:42px; height:42px; border-radius:12px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); display:flex; align-items:center; justify-content:center; color:#FFD66B; font-size:1.2rem; box-shadow:var(--clay-shadow-out-sm); flex-shrink:0;">
         <i class="fa-solid fa-graduation-cap"></i>
       </div>
       <div>
-        <div style="font-family:'Poppins'; font-weight:800; color:var(--royal-blue); font-size:1.15rem; line-height:1.1;">St. Mary's College</div>
+        <div style="font-family:'Poppins'; font-weight:800; color:var(--royal-blue); font-size:clamp(1rem, 3.5vw, 1.15rem); line-height:1.1;">St. Mary's College</div>
         <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:700;">Negombo, Sri Lanka • Founded 1871</div>
       </div>
     </div>
@@ -1768,22 +1928,37 @@ function renderLandingPage(currentUser) {
       <li><a href="#about">About School</a></li>
       <li><a href="#features">LMS Features</a></li>
       <li><a href="#announcements">Announcements</a></li>
-      <li><a href="#stats">Academic Stats</a></li>
       <li><a href="#contact">Contact</a></li>
     </ul>
 
-    <div id="auth-nav-container">
-      ${currentUser ? `
-        <a href="${currentUser.role === 'principal' ? '/admin' : currentUser.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard'}" class="clay-btn">
-          <i class="fa-solid fa-gauge"></i> Enter Dashboard (${currentUser.role})
-        </a>
-      ` : `
-        <a href="/login" class="clay-btn">
-          <i class="fa-solid fa-right-to-bracket"></i> Learning Portal Login
-        </a>
-      `}
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div id="auth-nav-container" class="desktop-auth-btn">
+        ${currentUser ? `
+          <a href="${currentUser.role === 'principal' ? '/admin' : currentUser.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard'}" class="clay-btn">
+            <i class="fa-solid fa-gauge"></i> Enter Dashboard (${currentUser.role})
+          </a>
+        ` : `
+          <a href="/login" class="clay-btn">
+            <i class="fa-solid fa-right-to-bracket"></i> Learning Portal Login
+          </a>
+        `}
+      </div>
+      <button class="mobile-nav-toggle" onclick="toggleLandingNav()" aria-label="Toggle Navigation">
+        <i class="fa-solid fa-bars"></i>
+      </button>
     </div>
   </nav>
+
+  <!-- Mobile Drawer Menu -->
+  <div id="landing-mobile-nav" class="landing-mobile-menu">
+    <a href="#about" onclick="toggleLandingNav()"><i class="fa-solid fa-landmark" style="margin-right:8px; color:var(--royal-blue);"></i> About School</a>
+    <a href="#features" onclick="toggleLandingNav()"><i class="fa-solid fa-shapes" style="margin-right:8px; color:#28A745;"></i> LMS Features</a>
+    <a href="#announcements" onclick="toggleLandingNav()"><i class="fa-solid fa-bullhorn" style="margin-right:8px; color:#E83E8C;"></i> Announcements</a>
+    <a href="#contact" onclick="toggleLandingNav()"><i class="fa-solid fa-envelope" style="margin-right:8px; color:var(--purple);"></i> Contact Information</a>
+    <div style="padding-top:10px; border-top:1px solid #EDF2F9; margin-top:6px;">
+      <a href="/login" class="clay-btn" style="width:100%; justify-content:center;"><i class="fa-solid fa-right-to-bracket"></i> Portal Sign In</a>
+    </div>
+  </div>
 
   <!-- Hero Section -->
   <section class="hero-section">
@@ -1801,18 +1976,18 @@ function renderLandingPage(currentUser) {
 
     <div>
       <div class="clay-card hero-card">
-        <div style="width:100px; height:100px; border-radius:50%; background:linear-gradient(135deg, #FFD66B, #F39C12); margin:0 auto 20px; display:flex; align-items:center; justify-content:center; font-size:2.8rem; color:white; box-shadow:var(--clay-shadow-out);">
+        <div style="width:90px; height:90px; border-radius:50%; background:linear-gradient(135deg, #FFD66B, #F39C12); margin:0 auto 16px; display:flex; align-items:center; justify-content:center; font-size:2.5rem; color:white; box-shadow:var(--clay-shadow-out);">
           <i class="fa-solid fa-award"></i>
         </div>
         <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:8px;">Excellence in Academics</h3>
-        <p style="color:var(--secondary-text); font-size:0.95rem; margin-bottom:20px;">Ranked among the premier schools in the Gampaha District, Western Province.</p>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-          <div class="clay-card-flat" style="padding:14px;">
-            <div style="font-family:'Poppins'; font-size:1.6rem; font-weight:800; color:var(--royal-blue);">98.4%</div>
+        <p style="color:var(--secondary-text); font-size:0.92rem; margin-bottom:18px;">Ranked among premier institutions in Western Province, Sri Lanka.</p>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:10px;">
+          <div class="clay-card-flat" style="padding:12px;">
+            <div style="font-family:'Poppins'; font-size:1.5rem; font-weight:800; color:var(--royal-blue);">98.4%</div>
             <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:700;">GCE O/L Pass Rate</div>
           </div>
-          <div class="clay-card-flat" style="padding:14px;">
-            <div style="font-family:'Poppins'; font-size:1.6rem; font-weight:800; color:#28A745;">100%</div>
+          <div class="clay-card-flat" style="padding:12px;">
+            <div style="font-family:'Poppins'; font-size:1.5rem; font-weight:800; color:#28A745;">100%</div>
             <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:700;">Digital Curriculum</div>
           </div>
         </div>
@@ -1822,37 +1997,37 @@ function renderLandingPage(currentUser) {
 
   <!-- About Section -->
   <section id="about" class="section-wrap">
-    <div class="clay-card" style="padding:40px; display:grid; grid-template-columns:1fr 1fr; gap:36px; align-items:center;">
+    <div class="clay-card about-grid-card">
       <div>
         <span class="clay-badge badge-yellow">History & Heritage</span>
-        <h2 style="font-family:'Poppins'; font-size:2rem; color:var(--royal-blue); margin:12px 0 16px;">155+ Years of Educational Leadership</h2>
+        <h2 style="font-family:'Poppins'; font-size:clamp(1.5rem, 3.5vw, 2rem); color:var(--royal-blue); margin:12px 0 16px;">155+ Years of Educational Leadership</h2>
         <p style="color:var(--dark-text); line-height:1.7; margin-bottom:14px;">Located in the historic coastal city of Negombo, St. Mary's College has stood as a beacon of moral education, academic vigor, sportsmanship, and civic pride for over a century and a half.</p>
         <p style="color:var(--secondary-text); line-height:1.7;">Our cutting-edge Learning Management System carries this legacy into the modern era, equipping our 3,000+ students with 24/7 access to multimedia study resources, interactive examinations, and personalized academic feedback.</p>
       </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-        <div class="clay-card-flat" style="padding:20px; text-align:center;">
-          <i class="fa-solid fa-users" style="font-size:2rem; color:var(--royal-blue); margin-bottom:10px;"></i>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:14px;">
+        <div class="clay-card-flat" style="padding:18px; text-align:center;">
+          <i class="fa-solid fa-users" style="font-size:1.8rem; color:var(--royal-blue); margin-bottom:8px;"></i>
           <h4 style="font-size:1.2rem; font-weight:800;">3,000+</h4>
           <p style="font-size:0.8rem; color:var(--secondary-text);">Active Marian Students</p>
         </div>
-        <div class="clay-card-flat" style="padding:20px; text-align:center;">
-          <i class="fa-solid fa-chalkboard-user" style="font-size:2rem; color:#28A745; margin-bottom:10px;"></i>
+        <div class="clay-card-flat" style="padding:18px; text-align:center;">
+          <i class="fa-solid fa-chalkboard-user" style="font-size:1.8rem; color:#28A745; margin-bottom:8px;"></i>
           <h4 style="font-size:1.2rem; font-weight:800;">120+</h4>
           <p style="font-size:0.8rem; color:var(--secondary-text);">Dedicated Faculty</p>
         </div>
-        <div class="clay-card-flat" style="padding:20px; text-align:center;">
-          <i class="fa-solid fa-trophy" style="font-size:2rem; color:#F39C12; margin-bottom:10px;"></i>
+        <div class="clay-card-flat" style="padding:18px; text-align:center;">
+          <i class="fa-solid fa-trophy" style="font-size:1.8rem; color:#F39C12; margin-bottom:8px;"></i>
           <h4 style="font-size:1.2rem; font-weight:800;">50+</h4>
           <p style="font-size:0.8rem; color:var(--secondary-text);">Sports & Clubs</p>
         </div>
-        <div class="clay-card-flat" style="padding:20px; text-align:center;">
-          <i class="fa-solid fa-network-wired" style="font-size:2rem; color:var(--purple); margin-bottom:10px;"></i>
+        <div class="clay-card-flat" style="padding:18px; text-align:center;">
+          <i class="fa-solid fa-network-wired" style="font-size:1.8rem; color:var(--purple); margin-bottom:8px;"></i>
           <h4 style="font-size:1.2rem; font-weight:800;">Smart LMS</h4>
-          <p style="font-size:0.8rem; color:var(--secondary-text);">Cloud Digital Campus</p>
+          <p style="font-size:0.8rem; color:var(--secondary-text);">Cloud Campus</p>
         </div>
       </div>
     </div>
-  </section>
+
 
   <!-- Features Section -->
   <section id="features" class="section-wrap">
@@ -1933,6 +2108,10 @@ function renderLandingPage(currentUser) {
   </footer>
 
   <script>
+    function toggleLandingNav() {
+      var menu = document.getElementById('landing-mobile-nav');
+      if (menu) menu.classList.toggle('open');
+    }
     (function() {
       try {
         var token = localStorage.getItem('stmarys_token');
@@ -2042,8 +2221,37 @@ function renderLoginPage(currentUser) {
       cursor: pointer;
       margin: 4px;
       transition: all 0.2s;
+      touch-action: manipulation;
     }
     .demo-pill:hover { background: #E8F0FE; color: var(--royal-blue); }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 12px 8px;
+      }
+      .login-container {
+        padding: 22px 16px !important;
+        border-radius: 20px !important;
+      }
+      .role-tabs {
+        gap: 4px;
+        padding: 4px;
+      }
+      .role-tab-btn {
+        padding: 8px 4px;
+        font-size: 0.8rem;
+        min-height: 44px;
+      }
+      .demo-box {
+        padding: 12px 10px;
+      }
+      .demo-pill {
+        display: block;
+        text-align: center;
+        margin: 6px 0;
+        padding: 8px 10px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -2225,26 +2433,28 @@ function renderStudentDashboard(user) {
   <title>Student Learning Portal | St. Mary's College Negombo</title>
   ${CLAY_BASE_STYLES}
   <style>
-    body { display: flex; }
+    body { display: flex; min-height: 100vh; overflow-x: hidden; width: 100%; }
     #sidebar {
       width: 270px;
       min-height: 100vh;
-      background: rgba(255, 255, 255, 0.85);
-      backdrop-filter: blur(12px);
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(14px);
       border-right: var(--clay-border);
       box-shadow: 6px 0 20px rgba(163, 177, 198, 0.25);
       position: fixed;
       left: 0; top: 0; bottom: 0;
       display: flex;
       flex-direction: column;
-      z-index: 100;
+      z-index: 1200;
       overflow-y: auto;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .menu-item {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 10px 16px;
+      padding: 12px 16px;
+      min-height: 44px;
       border-radius: 16px;
       color: var(--secondary-text);
       font-size: 0.9rem;
@@ -2253,6 +2463,7 @@ function renderStudentDashboard(user) {
       cursor: pointer;
       transition: all 0.2s ease;
       margin: 3px 12px;
+      touch-action: manipulation;
     }
     .menu-item:hover { background: #F0F4FF; color: var(--royal-blue); }
     .menu-item.active {
@@ -2265,6 +2476,8 @@ function renderStudentDashboard(user) {
       flex: 1;
       padding: 24px 32px;
       max-width: 1400px;
+      width: calc(100% - 270px);
+      transition: all 0.3s ease;
     }
     .tab-view { display: none; }
     .tab-view.active { display: block; animation: fadeIn 0.3s ease; }
@@ -2272,48 +2485,78 @@ function renderStudentDashboard(user) {
 
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
       margin-bottom: 28px;
     }
     .stat-card {
-      padding: 20px;
+      padding: 18px;
       border-radius: 20px;
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
     }
     .stat-icon {
-      width: 50px;
-      height: 50px;
+      width: 48px;
+      height: 48px;
       border-radius: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.3rem;
+      font-size: 1.25rem;
       box-shadow: var(--clay-shadow-out-sm);
+      flex-shrink: 0;
+    }
+    .student-overview-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
     }
     table { width: 100%; border-collapse: separate; border-spacing: 0; }
     th { background: #F6F9FF; padding: 12px 16px; font-size: 0.8rem; text-transform: uppercase; color: var(--secondary-text); font-weight: 800; border-bottom: 2px solid #E6EEFA; }
     td { padding: 12px 16px; border-bottom: 1px solid #EDF2F9; font-size: 0.9rem; font-weight: 600; }
-    @media (max-width: 900px) {
-      #sidebar { display: none; }
-      #main-content { margin-left: 0; padding: 16px; }
+    
+    @media (max-width: 992px) {
+      #sidebar {
+        transform: translateX(-100%);
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.25);
+      }
+      #sidebar.open {
+        transform: translateX(0);
+      }
+      #main-content {
+        margin-left: 0 !important;
+        padding: 16px !important;
+        width: 100% !important;
+      }
+      .mobile-menu-toggle {
+        display: inline-flex !important;
+      }
+      .student-overview-grid {
+        grid-template-columns: 1fr !important;
+        gap: 18px !important;
+      }
     }
   </style>
 </head>
 <body>
 
+  <!-- Sidebar Backdrop for Mobile -->
+  <div id="student-sidebar-backdrop" class="sidebar-backdrop" onclick="closeStudentSidebar()"></div>
+
   <!-- Sidebar -->
   <aside id="sidebar">
     <div style="padding:24px 18px; display:flex; align-items:center; gap:12px; border-bottom:1px solid #E6EEFA;">
-      <div style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); display:flex; align-items:center; justify-content:center; color:#FFD66B; font-size:1.2rem; box-shadow:var(--clay-shadow-out-sm);">
+      <div style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); display:flex; align-items:center; justify-content:center; color:#FFD66B; font-size:1.2rem; box-shadow:var(--clay-shadow-out-sm); flex-shrink:0;">
         <i class="fa-solid fa-graduation-cap"></i>
       </div>
-      <div>
+      <div style="flex:1;">
         <div style="font-family:'Poppins'; font-weight:800; color:var(--royal-blue); font-size:1.05rem;">St. Mary's College</div>
         <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:700;">Student Learning Portal</div>
       </div>
+      <button class="table-btn mobile-menu-toggle" style="background:#FDE8EF; color:#E83E8C;" onclick="closeStudentSidebar()" aria-label="Close menu">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
     </div>
 
     <div style="padding:16px 0; flex:1;">
@@ -2330,23 +2573,28 @@ function renderStudentDashboard(user) {
     </div>
 
     <div style="padding:16px; border-top:1px solid #E6EEFA; display:flex; align-items:center; gap:10px;">
-      <div style="width:38px; height:38px; border-radius:50%; background:#A9D8FF; display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--royal-blue);">A</div>
+      <div style="width:38px; height:38px; border-radius:50%; background:#A9D8FF; display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--royal-blue); flex-shrink:0;">A</div>
       <div style="flex:1; overflow:hidden;">
-        <div style="font-weight:800; font-size:0.85rem;" id="student-name-sidebar">${user ? user.name : 'Alex Fernando'}</div>
+        <div style="font-weight:800; font-size:0.85rem; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;" id="student-name-sidebar">${user ? user.name : 'Alex Fernando'}</div>
         <div style="font-size:0.75rem; color:var(--secondary-text);">Grade 10A • STU2026-001</div>
       </div>
-      <a href="/api/auth/logout" class="clay-btn clay-btn-danger" style="padding:6px 10px; font-size:0.8rem;" onclick="logout(event)"><i class="fa-solid fa-right-from-bracket"></i></a>
+      <a href="/api/auth/logout" class="clay-btn clay-btn-danger" style="padding:6px 10px; font-size:0.8rem; min-height:36px;" onclick="logout(event)"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>
   </aside>
 
   <!-- Main Content -->
   <main id="main-content">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
-      <div>
-        <h1 style="font-family:'Poppins'; font-size:1.8rem; color:var(--royal-blue);">Good Morning, ${user ? user.name.split(' ')[0] : 'Alex'}! 👋</h1>
-        <p style="color:var(--secondary-text); font-weight:600;">Ready to learn something amazing today at St. Mary's College?</p>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button class="action-icon-btn mobile-menu-toggle" onclick="toggleStudentSidebar()" aria-label="Open Navigation Menu">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+        <div>
+          <h1 style="font-family:'Poppins'; font-size:clamp(1.3rem, 3.5vw, 1.8rem); color:var(--royal-blue); line-height:1.2;">Good Morning, ${user ? user.name.split(' ')[0] : 'Alex'}! 👋</h1>
+          <p style="color:var(--secondary-text); font-weight:600; font-size:clamp(0.8rem, 2.5vw, 0.95rem);">Ready to learn something amazing today at St. Mary's College?</p>
+        </div>
       </div>
-      <div style="display:flex; gap:10px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <span class="clay-badge badge-blue"><i class="fa-solid fa-calendar"></i> Academic Year 2026 • Term 1</span>
         <a href="/" class="clay-btn clay-btn-secondary" style="padding:6px 14px; font-size:0.85rem;"><i class="fa-solid fa-globe"></i> Portal</a>
       </div>
@@ -2378,15 +2626,15 @@ function renderStudentDashboard(user) {
 
     <!-- 1. OVERVIEW TAB -->
     <div id="student-tab-overview" class="tab-view active">
-      <div style="display:grid; grid-template-columns:2fr 1fr; gap:24px;">
-        <div class="clay-card" style="padding:24px;">
+      <div class="student-overview-grid">
+        <div class="clay-card" style="padding:clamp(16px, 3vw, 24px);">
           <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px;"><i class="fa-solid fa-book-bookmark"></i> Current Enrolled Subjects</h3>
-          <div id="subjects-quick-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+          <div id="subjects-quick-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px;">
             <!-- Dynamically populated -->
           </div>
         </div>
 
-        <div class="clay-card" style="padding:24px;">
+        <div class="clay-card" style="padding:clamp(16px, 3vw, 24px);">
           <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px;"><i class="fa-solid fa-bell"></i> College Circulars</h3>
           <div id="quick-announcements" style="display:flex; flex-direction:column; gap:12px;">
             <!-- Dynamically populated -->
@@ -2432,11 +2680,11 @@ function renderStudentDashboard(user) {
 
     <!-- 6. RESULTS TAB -->
     <div id="student-tab-results" class="tab-view">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-        <h2 style="font-family:'Poppins'; color:var(--royal-blue);">My Academic Results & Grades</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+        <h2 style="font-family:'Poppins'; color:var(--royal-blue); font-size:clamp(1.2rem, 3vw, 1.6rem);">My Academic Results & Grades</h2>
         <button class="clay-btn" onclick="window.print()"><i class="fa-solid fa-print"></i> Print Report Card</button>
       </div>
-      <div class="clay-card" style="padding:20px;">
+      <div class="table-container">
         <table>
           <thead>
             <tr>
@@ -2456,35 +2704,37 @@ function renderStudentDashboard(user) {
 
     <!-- 7. ATTENDANCE TAB -->
     <div id="student-tab-attendance" class="tab-view">
-      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px;">Monthly Attendance Record</h2>
-      <div class="clay-card" style="padding:24px;">
-        <div style="display:flex; gap:20px; margin-bottom:20px;">
-          <div class="clay-card-flat" style="padding:16px; flex:1; text-align:center;">
-            <div style="font-size:1.8rem; font-weight:800; color:#28A745;">9 / 10</div>
-            <div style="font-size:0.8rem; color:var(--secondary-text);">Days Attended</div>
+      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px; font-size:clamp(1.2rem, 3vw, 1.6rem);">Monthly Attendance Record</h2>
+      <div class="clay-card" style="padding:clamp(16px, 3vw, 24px); margin-bottom:20px;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:14px; margin-bottom:20px;">
+          <div class="clay-card-flat" style="padding:14px; text-align:center;">
+            <div style="font-size:1.6rem; font-weight:800; color:#28A745;">9 / 10</div>
+            <div style="font-size:0.75rem; color:var(--secondary-text);">Days Attended</div>
           </div>
-          <div class="clay-card-flat" style="padding:16px; flex:1; text-align:center;">
-            <div style="font-size:1.8rem; font-weight:800; color:#E83E8C;">1</div>
-            <div style="font-size:0.8rem; color:var(--secondary-text);">Excused Absence</div>
+          <div class="clay-card-flat" style="padding:14px; text-align:center;">
+            <div style="font-size:1.6rem; font-weight:800; color:#E83E8C;">1</div>
+            <div style="font-size:0.75rem; color:var(--secondary-text);">Excused Absence</div>
           </div>
-          <div class="clay-card-flat" style="padding:16px; flex:1; text-align:center;">
-            <div style="font-size:1.8rem; font-weight:800; color:var(--royal-blue);">95.2%</div>
-            <div style="font-size:0.8rem; color:var(--secondary-text);">Attendance Rate</div>
+          <div class="clay-card-flat" style="padding:14px; text-align:center;">
+            <div style="font-size:1.6rem; font-weight:800; color:var(--royal-blue);">95.2%</div>
+            <div style="font-size:0.75rem; color:var(--secondary-text);">Attendance Rate</div>
           </div>
         </div>
-        <table>
-          <thead><tr><th>Date</th><th>Session</th><th>Recorded Status</th></tr></thead>
-          <tbody id="student-attendance-body">
-            <!-- Dynamically populated -->
-          </tbody>
-        </table>
+        <div class="table-container">
+          <table>
+            <thead><tr><th>Date</th><th>Session</th><th>Recorded Status</th></tr></thead>
+            <tbody id="student-attendance-body">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
     <!-- 8. TIMETABLE TAB -->
     <div id="student-tab-timetable" class="tab-view">
-      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px;">Weekly Academic Schedule (Grade 10A)</h2>
-      <div class="clay-card" style="padding:20px; overflow-x:auto;">
+      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px; font-size:clamp(1.2rem, 3vw, 1.6rem);">Weekly Academic Schedule (Grade 10A)</h2>
+      <div class="table-container">
         <table>
           <thead>
             <tr>
@@ -2505,19 +2755,19 @@ function renderStudentDashboard(user) {
 
     <!-- 9. ANNOUNCEMENTS TAB -->
     <div id="student-tab-announcements" class="tab-view">
-      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px;">School Notices & Announcements</h2>
+      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px; font-size:clamp(1.2rem, 3vw, 1.6rem);">School Notices & Announcements</h2>
       <div id="student-announcements-list" style="display:flex; flex-direction:column; gap:16px;"></div>
     </div>
 
     <!-- 10. PROFILE TAB -->
     <div id="student-tab-profile" class="tab-view">
-      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px;">My Profile Settings</h2>
-      <div class="clay-card" style="padding:28px; max-width:600px;">
+      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px; font-size:clamp(1.2rem, 3vw, 1.6rem);">My Profile Settings</h2>
+      <div class="clay-card" style="padding:clamp(18px, 4vw, 28px); max-width:600px;">
         <div style="display:flex; align-items:center; gap:18px; margin-bottom:20px;">
-          <div style="width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg, var(--royal-blue), var(--sky-blue)); display:flex; align-items:center; justify-content:center; font-size:1.6rem; color:white; font-weight:800;">A</div>
+          <div style="width:58px; height:58px; border-radius:50%; background:linear-gradient(135deg, var(--royal-blue), var(--sky-blue)); display:flex; align-items:center; justify-content:center; font-size:1.5rem; color:white; font-weight:800; flex-shrink:0;">A</div>
           <div>
             <h3 style="font-family:'Poppins'; color:var(--royal-blue);">Alex Fernando</h3>
-            <p style="color:var(--secondary-text);">Student ID: STU2026-001 • Grade 10A</p>
+            <p style="color:var(--secondary-text); font-size:0.85rem;">Student ID: STU2026-001 • Grade 10A</p>
           </div>
         </div>
         <div class="form-group"><label>Parent Guardian Name</label><input type="text" class="clay-input" value="Mr. Ranjan Fernando" readonly></div>
@@ -2528,20 +2778,20 @@ function renderStudentDashboard(user) {
   </main>
 
   <!-- Interactive Online Exam Modal -->
-  <div class="modal-backdrop" id="exam-take-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(38, 50, 75, 0.6); z-index:2000; align-items:center; justify-content:center; padding:20px;">
-    <div class="clay-card" style="max-width:760px; width:100%; max-height:90vh; overflow-y:auto; padding:28px; background:white;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #EDF2F9; padding-bottom:12px;">
+  <div class="modal-backdrop" id="exam-take-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(38, 50, 75, 0.6); z-index:2000; align-items:center; justify-content:center; padding:12px;">
+    <div class="clay-card" style="max-width:760px; width:100%; max-height:92vh; overflow-y:auto; padding:clamp(18px, 4vw, 28px); background:white;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #EDF2F9; padding-bottom:12px; flex-wrap:wrap; gap:8px;">
         <div>
-          <h2 id="active-exam-title" style="font-family:'Poppins'; color:var(--royal-blue);">Online Examination</h2>
+          <h2 id="active-exam-title" style="font-family:'Poppins'; color:var(--royal-blue); font-size:clamp(1.1rem, 3vw, 1.4rem);">Online Examination</h2>
           <span class="clay-badge badge-blue" id="active-exam-subject">Subject</span>
         </div>
-        <div class="clay-badge badge-pink" style="font-size:1rem; padding:8px 16px;">
+        <div class="clay-badge badge-pink" style="font-size:0.95rem; padding:6px 14px;">
           <i class="fa-solid fa-stopwatch"></i> <span id="exam-countdown">30:00</span>
         </div>
       </div>
       <form id="online-exam-form" onsubmit="submitActiveExam(event)">
         <div id="exam-questions-container" style="display:flex; flex-direction:column; gap:20px; margin-bottom:24px;"></div>
-        <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
           <button type="button" class="clay-btn clay-btn-secondary" onclick="closeExamModal()">Cancel</button>
           <button type="submit" class="clay-btn clay-btn-success"><i class="fa-solid fa-paper-plane"></i> Submit Answers</button>
         </div>
@@ -2550,9 +2800,9 @@ function renderStudentDashboard(user) {
   </div>
 
   <!-- Submission Upload Modal -->
-  <div class="modal-backdrop" id="submission-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(38, 50, 75, 0.6); z-index:2000; align-items:center; justify-content:center; padding:20px;">
-    <div class="clay-card" style="max-width:540px; width:100%; padding:28px; background:white;">
-      <h2 id="sub-modal-title" style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px;">Submit Assignment</h2>
+  <div class="modal-backdrop" id="submission-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(38, 50, 75, 0.6); z-index:2000; align-items:center; justify-content:center; padding:12px;">
+    <div class="clay-card" style="max-width:540px; width:100%; padding:clamp(18px, 4vw, 28px); background:white;">
+      <h2 id="sub-modal-title" style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px; font-size:clamp(1.1rem, 3vw, 1.35rem);">Submit Assignment</h2>
       <form id="submission-form" onsubmit="handleSubmitAssignment(event)">
         <input type="hidden" id="sub-asn-id">
         <div class="form-group">
@@ -2563,7 +2813,7 @@ function renderStudentDashboard(user) {
           <label>Document / File Link (PDF, Docx)</label>
           <input type="url" class="clay-input" id="sub-url" placeholder="https://drive.google.com/... or cloud link" value="https://example.com/submissions/alex_work.pdf">
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px; flex-wrap:wrap;">
           <button type="button" class="clay-btn clay-btn-secondary" onclick="closeModal('submission-modal')">Cancel</button>
           <button type="submit" class="clay-btn"><i class="fa-solid fa-upload"></i> Complete Submission</button>
         </div>
@@ -2577,6 +2827,25 @@ function renderStudentDashboard(user) {
     let materialsCache = [];
     let activeExamId = null;
     let timerInterval = null;
+
+    function toggleStudentSidebar() {
+      const sb = document.getElementById('sidebar');
+      const bd = document.getElementById('student-sidebar-backdrop');
+      if (sb) {
+        const isOpen = sb.classList.toggle('open');
+        if (bd) {
+          if (isOpen) bd.classList.add('open');
+          else bd.classList.remove('open');
+        }
+      }
+    }
+
+    function closeStudentSidebar() {
+      const sb = document.getElementById('sidebar');
+      const bd = document.getElementById('student-sidebar-backdrop');
+      if (sb) sb.classList.remove('open');
+      if (bd) bd.classList.remove('open');
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -2608,6 +2877,9 @@ function renderStudentDashboard(user) {
       if (target) target.classList.add('active');
       const menu = Array.from(document.querySelectorAll('.menu-item')).find(m => m.getAttribute('onclick') && m.getAttribute('onclick').includes(tab));
       if (menu) menu.classList.add('active');
+      if (window.innerWidth < 992) {
+        closeStudentSidebar();
+      }
     }
 
     async function loadStudentSubjects() {
@@ -2960,26 +3232,28 @@ function renderTeacherDashboard(user) {
   <title>Faculty Management Center | St. Mary's College Negombo</title>
   ${CLAY_BASE_STYLES}
   <style>
-    body { display: flex; }
+    body { display: flex; min-height: 100vh; overflow-x: hidden; width: 100%; }
     #sidebar {
       width: 270px;
       min-height: 100vh;
-      background: rgba(255, 255, 255, 0.85);
-      backdrop-filter: blur(12px);
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(14px);
       border-right: var(--clay-border);
       box-shadow: 6px 0 20px rgba(163, 177, 198, 0.25);
       position: fixed;
       left: 0; top: 0; bottom: 0;
       display: flex;
       flex-direction: column;
-      z-index: 100;
+      z-index: 1200;
       overflow-y: auto;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .menu-item {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 10px 16px;
+      padding: 12px 16px;
+      min-height: 44px;
       border-radius: 16px;
       color: var(--secondary-text);
       font-size: 0.9rem;
@@ -2988,6 +3262,7 @@ function renderTeacherDashboard(user) {
       cursor: pointer;
       transition: all 0.2s ease;
       margin: 3px 12px;
+      touch-action: manipulation;
     }
     .menu-item:hover { background: #F0F4FF; color: var(--royal-blue); }
     .menu-item.active {
@@ -3000,6 +3275,8 @@ function renderTeacherDashboard(user) {
       flex: 1;
       padding: 24px 32px;
       max-width: 1400px;
+      width: calc(100% - 270px);
+      transition: all 0.3s ease;
     }
     .tab-view { display: none; }
     .tab-view.active { display: block; animation: fadeIn 0.3s ease; }
@@ -3007,48 +3284,95 @@ function renderTeacherDashboard(user) {
 
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
       margin-bottom: 28px;
     }
     .stat-card {
-      padding: 20px;
+      padding: 18px;
       border-radius: 20px;
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
     }
     .stat-icon {
-      width: 50px;
-      height: 50px;
+      width: 48px;
+      height: 48px;
       border-radius: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.3rem;
+      font-size: 1.25rem;
       box-shadow: var(--clay-shadow-out-sm);
+      flex-shrink: 0;
+    }
+    .teacher-overview-grid {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 24px;
+    }
+    .marks-form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      align-items: flex-end;
+      margin-bottom: 24px;
     }
     table { width: 100%; border-collapse: separate; border-spacing: 0; }
     th { background: #F6F9FF; padding: 12px 16px; font-size: 0.8rem; text-transform: uppercase; color: var(--secondary-text); font-weight: 800; border-bottom: 2px solid #E6EEFA; }
     td { padding: 12px 16px; border-bottom: 1px solid #EDF2F9; font-size: 0.9rem; font-weight: 600; }
-    @media (max-width: 900px) {
-      #sidebar { display: none; }
-      #main-content { margin-left: 0; padding: 16px; }
+    
+    @media (max-width: 992px) {
+      #sidebar {
+        transform: translateX(-100%);
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.25);
+      }
+      #sidebar.open {
+        transform: translateX(0);
+      }
+      #main-content {
+        margin-left: 0 !important;
+        padding: 16px !important;
+        width: 100% !important;
+      }
+      .mobile-menu-toggle {
+        display: inline-flex !important;
+      }
+      .teacher-overview-grid {
+        grid-template-columns: 1fr !important;
+        gap: 18px !important;
+      }
+    }
+    @media (max-width: 768px) {
+      .marks-form-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .marks-form-grid button[type="submit"] {
+        width: 100%;
+        justify-content: center;
+        margin-top: 8px;
+      }
     }
   </style>
 </head>
 <body>
 
+  <!-- Sidebar Backdrop for Mobile -->
+  <div id="teacher-sidebar-backdrop" class="sidebar-backdrop" onclick="closeTeacherSidebar()"></div>
+
   <!-- Sidebar -->
   <aside id="sidebar">
     <div style="padding:24px 18px; display:flex; align-items:center; gap:12px; border-bottom:1px solid #E6EEFA;">
-      <div style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); display:flex; align-items:center; justify-content:center; color:#FFD66B; font-size:1.2rem; box-shadow:var(--clay-shadow-out-sm);">
+      <div style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); display:flex; align-items:center; justify-content:center; color:#FFD66B; font-size:1.2rem; box-shadow:var(--clay-shadow-out-sm); flex-shrink:0;">
         <i class="fa-solid fa-graduation-cap"></i>
       </div>
-      <div>
+      <div style="flex:1;">
         <div style="font-family:'Poppins'; font-weight:800; color:var(--royal-blue); font-size:1.05rem;">St. Mary's College</div>
         <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:700;">Faculty Workspace</div>
       </div>
+      <button class="table-btn mobile-menu-toggle" style="background:#FDE8EF; color:#E83E8C;" onclick="closeTeacherSidebar()" aria-label="Close menu">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
     </div>
 
     <div style="padding:16px 0; flex:1;">
@@ -3064,23 +3388,28 @@ function renderTeacherDashboard(user) {
     </div>
 
     <div style="padding:16px; border-top:1px solid #E6EEFA; display:flex; align-items:center; gap:10px;">
-      <div style="width:38px; height:38px; border-radius:50%; background:#FFD66B; display:flex; align-items:center; justify-content:center; font-weight:800; color:#523b00;">T</div>
+      <div style="width:38px; height:38px; border-radius:50%; background:#FFD66B; display:flex; align-items:center; justify-content:center; font-weight:800; color:#523b00; flex-shrink:0;">T</div>
       <div style="flex:1; overflow:hidden;">
-        <div style="font-weight:800; font-size:0.85rem;">${user ? user.name : 'Mr. Sunil Perera'}</div>
+        <div style="font-weight:800; font-size:0.85rem; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;">${user ? user.name : 'Mr. Sunil Perera'}</div>
         <div style="font-size:0.75rem; color:var(--secondary-text);">Senior Faculty Master</div>
       </div>
-      <a href="/api/auth/logout" class="clay-btn clay-btn-danger" style="padding:6px 10px; font-size:0.8rem;" onclick="logout(event)"><i class="fa-solid fa-right-from-bracket"></i></a>
+      <a href="/api/auth/logout" class="clay-btn clay-btn-danger" style="padding:6px 10px; font-size:0.8rem; min-height:36px;" onclick="logout(event)"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>
   </aside>
 
   <!-- Main Content -->
   <main id="main-content">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
-      <div>
-        <h1 style="font-family:'Poppins'; font-size:1.8rem; color:var(--royal-blue);">Welcome Back, ${user ? user.name : 'Mr. Perera'}! 👋</h1>
-        <p style="color:var(--secondary-text); font-weight:600;">Faculty Portal — Mathematics & Senior Classes Management</p>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <button class="action-icon-btn mobile-menu-toggle" onclick="toggleTeacherSidebar()" aria-label="Open Navigation Menu">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+        <div>
+          <h1 style="font-family:'Poppins'; font-size:clamp(1.3rem, 3.5vw, 1.8rem); color:var(--royal-blue); line-height:1.2;">Welcome Back, ${user ? user.name : 'Mr. Perera'}! 👋</h1>
+          <p style="color:var(--secondary-text); font-weight:600; font-size:clamp(0.8rem, 2.5vw, 0.95rem);">Faculty Portal — Mathematics & Senior Classes Management</p>
+        </div>
       </div>
-      <div style="display:flex; gap:10px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="clay-btn" onclick="openCreateMaterialModal()"><i class="fa-solid fa-plus"></i> Add Study Pack</button>
         <button class="clay-btn clay-btn-secondary" onclick="openCreateAsnModal()"><i class="fa-solid fa-clipboard-plus"></i> New Assignment</button>
       </div>
@@ -3112,13 +3441,13 @@ function renderTeacherDashboard(user) {
 
     <!-- 1. OVERVIEW TAB -->
     <div id="teacher-tab-overview" class="tab-view active">
-      <div style="display:grid; grid-template-columns:1.5fr 1fr; gap:24px;">
-        <div class="clay-card" style="padding:24px;">
+      <div class="teacher-overview-grid">
+        <div class="clay-card" style="padding:clamp(16px, 3vw, 24px);">
           <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px;"><i class="fa-solid fa-list-check"></i> Submissions Needing Review</h3>
           <div id="teacher-pending-submissions" style="display:flex; flex-direction:column; gap:12px;"></div>
         </div>
 
-        <div class="clay-card" style="padding:24px;">
+        <div class="clay-card" style="padding:clamp(16px, 3vw, 24px);">
           <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px;"><i class="fa-solid fa-bolt"></i> Quick Classroom Shortcuts</h3>
           <div style="display:flex; flex-direction:column; gap:10px;">
             <button class="clay-btn clay-btn-secondary" onclick="switchTeacherTab('attendance')"><i class="fa-solid fa-check-double"></i> Mark Today's Attendance</button>
@@ -3131,11 +3460,11 @@ function renderTeacherDashboard(user) {
 
     <!-- 2. CLASSES & STUDENTS TAB -->
     <div id="teacher-tab-classes" class="tab-view">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-        <h2 style="font-family:'Poppins'; color:var(--royal-blue);">Assigned Class Roster (Grade 10A)</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+        <h2 style="font-family:'Poppins'; color:var(--royal-blue); font-size:clamp(1.2rem, 3vw, 1.6rem);">Assigned Class Roster (Grade 10A)</h2>
         <input type="text" class="clay-input" style="max-width:280px;" placeholder="Search student name..." onkeyup="filterRoster(this.value)">
       </div>
-      <div class="clay-card" style="padding:20px;">
+      <div class="table-container">
         <table>
           <thead>
             <tr><th>Student ID</th><th>Student Name</th><th>Gender</th><th>Parent Contact</th><th>Academic Status</th></tr>
@@ -3147,70 +3476,74 @@ function renderTeacherDashboard(user) {
 
     <!-- 3. MATERIALS TAB -->
     <div id="teacher-tab-materials" class="tab-view">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-        <h2 style="font-family:'Poppins'; color:var(--royal-blue);">Managed Learning Resources</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+        <h2 style="font-family:'Poppins'; color:var(--royal-blue); font-size:clamp(1.2rem, 3vw, 1.6rem);">Managed Learning Resources</h2>
         <button class="clay-btn" onclick="openCreateMaterialModal()"><i class="fa-solid fa-plus"></i> Upload New Pack</button>
       </div>
-      <div id="teacher-materials-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:20px;"></div>
+      <div id="teacher-materials-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:20px;"></div>
     </div>
 
     <!-- 4. ASSIGNMENTS TAB -->
     <div id="teacher-tab-assignments" class="tab-view">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-        <h2 style="font-family:'Poppins'; color:var(--royal-blue);">Class Assignments & Student Submissions</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+        <h2 style="font-family:'Poppins'; color:var(--royal-blue); font-size:clamp(1.2rem, 3vw, 1.6rem);">Class Assignments & Student Submissions</h2>
         <button class="clay-btn" onclick="openCreateAsnModal()"><i class="fa-solid fa-plus"></i> Create Assignment</button>
       </div>
-      <div class="clay-card" style="padding:20px; margin-bottom:24px;">
+      <div class="clay-card" style="padding:clamp(16px, 3vw, 24px); margin-bottom:24px;">
         <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:14px;">Recent Student Submissions</h3>
-        <table>
-          <thead>
-            <tr><th>Student</th><th>Assignment</th><th>Submitted</th><th>Work Link</th><th>Current Marks</th><th>Action</th></tr>
-          </thead>
-          <tbody id="teacher-submissions-table"></tbody>
-        </table>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr><th>Student</th><th>Assignment</th><th>Submitted</th><th>Work Link</th><th>Current Marks</th><th>Action</th></tr>
+            </thead>
+            <tbody id="teacher-submissions-table"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
     <!-- 5. EXAM CREATOR TAB -->
     <div id="teacher-tab-exams" class="tab-view">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-        <h2 style="font-family:'Poppins'; color:var(--royal-blue);">Online Examination Builder</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+        <h2 style="font-family:'Poppins'; color:var(--royal-blue); font-size:clamp(1.2rem, 3vw, 1.6rem);">Online Examination Builder</h2>
         <button class="clay-btn" onclick="openCreateExamModal()"><i class="fa-solid fa-file-circle-plus"></i> Create New Exam</button>
       </div>
-      <div id="teacher-exams-list" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:20px;"></div>
+      <div id="teacher-exams-list" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:20px;"></div>
     </div>
 
     <!-- 6. ATTENDANCE TAB -->
     <div id="teacher-tab-attendance" class="tab-view">
-      <div class="clay-card" style="padding:24px; margin-bottom:24px;">
+      <div class="clay-card" style="padding:clamp(16px, 3vw, 24px); margin-bottom:24px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
           <div>
-            <h2 style="font-family:'Poppins'; color:var(--royal-blue);">Mark Classroom Attendance</h2>
-            <p style="color:var(--secondary-text);">Record daily present/absent status for your students</p>
+            <h2 style="font-family:'Poppins'; color:var(--royal-blue); font-size:clamp(1.2rem, 3vw, 1.6rem);">Mark Classroom Attendance</h2>
+            <p style="color:var(--secondary-text); font-size:0.9rem;">Record daily present/absent status for your students</p>
           </div>
-          <div style="display:flex; gap:10px; align-items:center;">
-            <input type="date" class="clay-input" id="att-date-picker" value="2026-03-24">
-            <select class="clay-input" id="att-class-picker">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <input type="date" class="clay-input" id="att-date-picker" value="2026-03-24" style="width:auto;">
+            <select class="clay-input" id="att-class-picker" style="width:auto;">
               <option value="Grade 10A">Grade 10A</option>
               <option value="Grade 11A">Grade 11A</option>
             </select>
             <button class="clay-btn" onclick="saveClassAttendance()"><i class="fa-solid fa-floppy-disk"></i> Save Attendance</button>
           </div>
         </div>
-        <table>
-          <thead>
-            <tr><th>ID</th><th>Student Name</th><th>Present</th><th>Absent</th><th>Late</th></tr>
-          </thead>
-          <tbody id="teacher-attendance-roster"></tbody>
-        </table>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Student Name</th><th>Present</th><th>Absent</th><th>Late</th></tr>
+            </thead>
+            <tbody id="teacher-attendance-roster"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
     <!-- 7. RESULTS TAB -->
     <div id="teacher-tab-results" class="tab-view">
-      <div class="clay-card" style="padding:24px;">
-        <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px;">Record Term Test Marks</h2>
-        <form id="record-marks-form" onsubmit="handleMarksSubmit(event)" style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr auto; gap:12px; align-items:flex-end; margin-bottom:24px;">
+      <div class="clay-card" style="padding:clamp(16px, 3vw, 24px);">
+        <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px; font-size:clamp(1.2rem, 3vw, 1.6rem);">Record Term Test Marks</h2>
+        <form id="record-marks-form" onsubmit="handleMarksSubmit(event)" class="marks-form-grid">
           <div class="form-group" style="margin:0;">
             <label>Student</label>
             <select class="clay-input" id="marks-student-select" required></select>
@@ -3232,19 +3565,21 @@ function renderTeacherDashboard(user) {
           </div>
           <button type="submit" class="clay-btn"><i class="fa-solid fa-plus"></i> Record Mark</button>
         </form>
-        <table>
-          <thead>
-            <tr><th>Student</th><th>Subject</th><th>Marks</th><th>Grade</th><th>Recorded By</th></tr>
-          </thead>
-          <tbody id="teacher-results-table"></tbody>
-        </table>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr><th>Student</th><th>Subject</th><th>Marks</th><th>Grade</th><th>Recorded By</th></tr>
+            </thead>
+            <tbody id="teacher-results-table"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
     <!-- 8. TIMETABLE TAB -->
     <div id="teacher-tab-timetable" class="tab-view">
-      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px;">Faculty Teaching Schedule</h2>
-      <div class="clay-card" style="padding:20px; overflow-x:auto;">
+      <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:20px; font-size:clamp(1.2rem, 3vw, 1.6rem);">Faculty Teaching Schedule</h2>
+      <div class="table-container">
         <table>
           <thead>
             <tr><th>Period</th><th>Monday</th><th>Tuesday</th><th>Wednesday</th><th>Thursday</th><th>Friday</th></tr>
