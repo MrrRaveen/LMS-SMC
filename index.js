@@ -3817,7 +3817,10 @@ function renderRegisterPage(currentUser) {
     }
 
     async function handleRegistrationSubmit(e) {
-      e.preventDefault();
+      if (e) {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+      }
       const pass = document.getElementById('reg-pass').value;
       const confirmPass = document.getElementById('reg-confirm-pass').value;
       const avatar = document.getElementById('reg-avatar-data').value;
