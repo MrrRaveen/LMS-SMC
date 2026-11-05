@@ -425,6 +425,68 @@ function createAdminRouter(store, logActivity) {
     }
   });
 
+  // 14. Registration Approvals & ID Verification APIs
+  router.get('/pending-approvals', async (req, res) => {
+    try {
+      const list = await store.getPendingRegistrations();
+      res.json({ success: true, data: list });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  router.post('/approve-user/:id', async (req, res) => {
+    try {
+      const approved = await store.approveUser(req.params.id, req.user.name);
+      if (!approved) return res.status(404).json({ success: false, message: 'User record not found' });
+      await logActivity('Approved Registration', req.user, approved.name, `Principal approved ${approved.role} onboarding application`);
+      res.json({ success: true, message: `Account for ${approved.name} (${approved.role}) approved and activated.`, data: approved });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  router.post('/reject-user/:id', async (req, res) => {
+    try {
+      const { reason } = req.body;
+      const rejected = await store.rejectUser(req.params.id, reason, req.user.name);
+      if (!rejected) return res.status(404).json({ success: false, message: 'User record not found' });
+      await logActivity('Declined Registration', req.user, rejected.name, `Application declined: ${reason || 'Unverified affiliation'}`);
+      res.json({ success: true, message: `Registration for ${rejected.name} declined.`, data: rejected });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // 15. Contact Us Inquiries & Messages APIs
+  router.get('/contact-messages', async (req, res) => {
+    try {
+      const messages = await store.getContactMessages();
+      res.json({ success: true, data: messages });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  router.post('/contact-messages/:id/read', async (req, res) => {
+    try {
+      const msg = await store.markContactMessageRead(req.params.id);
+      res.json({ success: true, message: 'Marked as read', data: msg });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  router.delete('/contact-messages/:id', async (req, res) => {
+    try {
+      await store.deleteContactMessage(req.params.id);
+      await logActivity('Deleted Contact Inquiry', req.user, `ID: ${req.params.id}`, 'Removed contact message');
+      res.json({ success: true, message: 'Message deleted successfully' });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   return router;
 }
 
@@ -440,13 +502,42 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
   <title>Principal Administration Dashboard | St. Mary's College Negombo</title>
   <script>
     (function() {
+      // 1. Suppress external Chrome Extension errors (e.g. extension request interceptors)
       try {
-        var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
-        if (!nativeFetch && window.Window && window.Window.prototype && window.Window.prototype.fetch) {
-          nativeFetch = window.Window.prototype.fetch.bind(window);
+        window.addEventListener('error', function(event) {
+          if (event) {
+            var msg = (event.message || '') + '';
+            var fn = (event.filename || '') + '';
+            if (fn.indexOf('chrome-extension://') !== -1 || (msg.indexOf('fetch') !== -1 && msg.indexOf('getter') !== -1)) {
+              if (typeof event.preventDefault === 'function') event.preventDefault();
+              if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+              if (typeof event.stopPropagation === 'function') event.stopPropagation();
+              return true;
+            }
+          }
+        }, true);
+
+        var _prevOnError = window.onerror;
+        window.onerror = function(msg, url, line, col, err) {
+          var u = (url || '') + '';
+          var m = (msg || '') + '';
+          if (u.indexOf('chrome-extension://') !== -1 || (m.indexOf('fetch') !== -1 && m.indexOf('getter') !== -1)) {
+            return true;
+          }
+          if (typeof _prevOnError === 'function') {
+            return _prevOnError.apply(this, arguments);
+          }
+        };
+      } catch (_) {}
+
+      // 2. Safe Fetch with both GETTER and SETTER so extensions/scripts assigning window.fetch succeed without 'has only a getter' errors
+      try {
+        var _nativeFetch = window.fetch;
+        if (!_nativeFetch && typeof Window !== 'undefined' && Window.prototype && Window.prototype.fetch) {
+          _nativeFetch = Window.prototype.fetch;
         }
 
-        function safeFetch(url, options) {
+        var safeFetch = function(url, options) {
           options = options || {};
           var token = null;
           try {
@@ -469,27 +560,32 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
             }
           }
           options.credentials = options.credentials || 'include';
-          if (nativeFetch) {
-            return nativeFetch(url, options);
+          if (typeof _nativeFetch === 'function') {
+            return _nativeFetch.call(window, url, options);
           }
           return Promise.reject(new Error('Fetch API unavailable'));
-        }
+        };
 
-        Object.defineProperty(window, 'fetch', {
-          value: safeFetch,
-          writable: true,
+        var fetchDescriptor = {
+          get: function() {
+            return safeFetch;
+          },
+          set: function(fn) {
+            _nativeFetch = fn;
+          },
           configurable: true,
           enumerable: true
-        });
+        };
 
-        if (window.Window && window.Window.prototype) {
+        try {
+          Object.defineProperty(window, 'fetch', fetchDescriptor);
+        } catch (_) {
+          try { window.fetch = safeFetch; } catch (__) {}
+        }
+
+        if (typeof Window !== 'undefined' && Window.prototype) {
           try {
-            Object.defineProperty(window.Window.prototype, 'fetch', {
-              value: safeFetch,
-              writable: true,
-              configurable: true,
-              enumerable: true
-            });
+            Object.defineProperty(Window.prototype, 'fetch', fetchDescriptor);
           } catch (_) {}
         }
       } catch (e) {}
@@ -501,20 +597,21 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
     :root {
-      --primary-blue: #4F7DF3;
-      --royal-blue: #3159C9;
-      --sky-blue: #A9D8FF;
-      --light-bg: #F3F6FF;
-      --purple: #9475E8;
-      --pink: #F5A5C5;
-      --yellow: #FFD66B;
-      --green: #70D6A3;
-      --dark-text: #26324B;
-      --secondary-text: #75819A;
+      --primary-blue: #1C3D80;
+      --royal-blue: #0F2A66;
+      --sky-blue: #A9C2F4;
+      --light-bg: #F4F7FC;
+      --purple: #7C4DFF;
+      --pink: #E91E63;
+      --yellow: #F59E0B;
+      --gold: #D97706;
+      --green: #10B981;
+      --dark-text: #1E293B;
+      --secondary-text: #64748B;
       --clay-surface: #FFFFFF;
-      --clay-shadow-out: 8px 8px 18px rgba(163, 177, 198, 0.4), -8px -8px 18px rgba(255, 255, 255, 0.9);
-      --clay-shadow-out-sm: 4px 4px 10px rgba(163, 177, 198, 0.35), -4px -4px 10px rgba(255, 255, 255, 0.9);
-      --clay-shadow-in: inset 3px 3px 6px rgba(163, 177, 198, 0.3), inset -3px -3px 6px rgba(255, 255, 255, 0.8);
+      --clay-shadow-out: 8px 8px 18px rgba(28, 61, 128, 0.12), -8px -8px 18px rgba(255, 255, 255, 0.9);
+      --clay-shadow-out-sm: 4px 4px 10px rgba(28, 61, 128, 0.1), -4px -4px 10px rgba(255, 255, 255, 0.9);
+      --clay-shadow-in: inset 3px 3px 6px rgba(28, 61, 128, 0.1), inset -3px -3px 6px rgba(255, 255, 255, 0.8);
       --clay-border: 1px solid rgba(255, 255, 255, 0.8);
     }
 
@@ -1066,8 +1163,8 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
   <!-- Sidebar -->
   <aside id="sidebar">
     <div class="sidebar-header">
-      <div class="school-crest-svg">
-        <i class="fa-solid fa-graduation-cap"></i>
+      <div class="school-crest-svg" style="background:#FFFFFF; padding:2px; border-radius:12px; overflow:hidden;">
+        <img src="/assets/aistudio/image_da1f9c36.png" alt="St. Mary's College Crest" style="width:100%; height:100%; object-fit:contain; border-radius:10px;" />
       </div>
       <div>
         <div class="school-title">St. Mary's College</div>
@@ -1077,6 +1174,14 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
 
     <nav class="sidebar-menu">
       <a class="menu-item active" onclick="switchTab('overview')"><i class="fa-solid fa-chart-pie"></i> Overview</a>
+      <a class="menu-item" onclick="switchTab('approvals')" id="menu-approvals">
+        <i class="fa-solid fa-id-card-clip"></i> Approvals
+        <span class="clay-badge badge-yellow" id="sidebar-approvals-count" style="margin-left:auto; font-size:0.72rem; padding:2px 8px;">0</span>
+      </a>
+      <a class="menu-item" onclick="switchTab('messages')" id="menu-messages">
+        <i class="fa-solid fa-envelope"></i> Inquiries & Messages
+        <span class="clay-badge badge-pink" id="sidebar-messages-count" style="margin-left:auto; font-size:0.72rem; padding:2px 8px;">0</span>
+      </a>
       <a class="menu-item" onclick="switchTab('students')"><i class="fa-solid fa-user-graduate"></i> Students</a>
       <a class="menu-item" onclick="switchTab('teachers')"><i class="fa-solid fa-chalkboard-user"></i> Teachers</a>
       <a class="menu-item" onclick="switchTab('classes')"><i class="fa-solid fa-shapes"></i> Classes</a>
@@ -1198,6 +1303,20 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
             <div class="stat-lbl">Avg. Attendance</div>
           </div>
         </div>
+        <div class="clay-card stat-card" style="cursor:pointer; border: 2px solid #FFE082;" onclick="switchTab('approvals')" title="Click to review pending candidate approvals">
+          <div class="stat-icon" style="background:#FFF8E1; color:#F39C12;"><i class="fa-solid fa-user-clock"></i></div>
+          <div>
+            <div class="stat-val" id="stat-pending-approvals" style="color:#D97706;">0</div>
+            <div class="stat-lbl">Pending Approvals <i class="fa-solid fa-arrow-right" style="font-size:0.7rem;"></i></div>
+          </div>
+        </div>
+        <div class="clay-card stat-card" style="cursor:pointer; border: 2px solid #F5A5C5;" onclick="switchTab('messages')" title="Click to view inquiries submitted by visitors">
+          <div class="stat-icon" style="background:#FDE8EF; color:#E83E8C;"><i class="fa-solid fa-envelope"></i></div>
+          <div>
+            <div class="stat-val" id="stat-contact-messages" style="color:#C2185B;">0</div>
+            <div class="stat-lbl">Visitor Inquiries <i class="fa-solid fa-arrow-right" style="font-size:0.7rem;"></i></div>
+          </div>
+        </div>
         <div class="clay-card stat-card">
           <div class="stat-icon" style="background:#FFF3E0; color:#E65100;"><i class="fa-solid fa-trophy"></i></div>
           <div>
@@ -1212,6 +1331,9 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
         <div class="clay-card" style="padding: 24px;">
           <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:16px;"><i class="fa-solid fa-bolt" style="color:var(--yellow);"></i> Quick Administrative Actions</h3>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <button class="clay-btn clay-btn-warning" onclick="switchTab('approvals')" style="grid-column: span 2; justify-content:center;">
+              <i class="fa-solid fa-id-card-clip"></i> Review Candidate Approvals
+            </button>
             <button class="clay-btn clay-btn-secondary" onclick="openStudentModal()"><i class="fa-solid fa-user-plus"></i> Add Student</button>
             <button class="clay-btn clay-btn-secondary" onclick="openTeacherModal()"><i class="fa-solid fa-user-tie"></i> Add Teacher</button>
             <button class="clay-btn clay-btn-secondary" onclick="openClassModal()"><i class="fa-solid fa-layer-group"></i> Create Class</button>
@@ -1230,6 +1352,47 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
             <!-- Rendered dynamically -->
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 1b. REGISTRATION APPROVALS TAB -->
+    <div id="tab-approvals" class="tab-view">
+      <div class="section-header">
+        <div class="section-title">
+          <h1>Registration Approvals & ID Verification</h1>
+          <p>Review submitted Student and Teacher onboarding applications. Inspect uploaded profile photos for identity verification and authorize LMS portal access.</p>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="clay-btn clay-btn-secondary" onclick="loadPendingApprovals()"><i class="fa-solid fa-rotate"></i> Refresh Queue</button>
+        </div>
+      </div>
+
+      <!-- Quick Guidance Banner -->
+      <div class="photo-notice-box" style="margin-bottom:20px; font-size:0.88rem; padding:16px;">
+        <i class="fa-solid fa-shield-halved" style="font-size:1.6rem;"></i>
+        <div>
+          <strong>Principal Institutional Verification Protocol:</strong>
+          Every candidate registering on the portal undergoes email verification via Resend. The Principal reviews candidate details and inspects the mandatory profile photo to verify enrollment affiliation before authorizing full LMS access.
+        </div>
+      </div>
+
+      <!-- Filters & Search Bar -->
+      <div class="clay-card-flat" style="padding:16px; margin-bottom:20px; display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;" id="approvals-filter-btns">
+          <button class="table-btn active" id="btn-filter-all" style="padding:8px 14px; border-radius:12px; font-weight:800;" onclick="filterApprovalsList('all')">All (<span id="count-approvals-all">0</span>)</button>
+          <button class="table-btn" id="btn-filter-student" style="padding:8px 14px; border-radius:12px; font-weight:800;" onclick="filterApprovalsList('student')">👨‍🎓 Students (<span id="count-approvals-student">0</span>)</button>
+          <button class="table-btn" id="btn-filter-teacher" style="padding:8px 14px; border-radius:12px; font-weight:800;" onclick="filterApprovalsList('teacher')">👩‍🏫 Teachers (<span id="count-approvals-teacher">0</span>)</button>
+          <button class="table-btn" id="btn-filter-verified" style="padding:8px 14px; border-radius:12px; font-weight:800;" onclick="filterApprovalsList('verified')">✅ Email Verified</button>
+          <button class="table-btn" id="btn-filter-pending" style="padding:8px 14px; border-radius:12px; font-weight:800;" onclick="filterApprovalsList('pending_verification')">⏳ Pending Email</button>
+        </div>
+        <div style="min-width:240px; flex:1; max-width:360px;">
+          <input type="text" id="approvals-search-input" class="clay-input" placeholder="Search applicant by name, email, or ID..." onkeyup="searchApprovals(this.value)">
+        </div>
+      </div>
+
+      <!-- Candidate Approvals Grid -->
+      <div id="approvals-cards-container" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:20px;">
+        <!-- Injected dynamically via loadPendingApprovals() -->
       </div>
     </div>
 
@@ -1645,11 +1808,11 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
           <div class="form-row">
             <div class="form-group">
               <label>Official Email</label>
-              <input type="email" class="clay-input" id="setting-email" value="info@stmarysnegombo.example">
+              <input type="email" class="clay-input" id="setting-email" value="smcnegombomediaunit@gmail.com">
             </div>
             <div class="form-group">
               <label>Contact Phone</label>
-              <input type="text" class="clay-input" id="setting-phone" value="+94 31 555 0123">
+              <input type="text" class="clay-input" id="setting-phone" value="0312 222 594">
             </div>
           </div>
           <div class="form-group">
@@ -1685,6 +1848,34 @@ function renderAdminPage(user = { name: 'Rev. Fr. Principal Ranjith', email: 'pr
           </thead>
           <tbody id="admin-logs-body">
             <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 17. INQUIRIES & MESSAGES TAB -->
+    <div id="tab-messages" class="tab-view">
+      <div class="section-header">
+        <div class="section-title">
+          <h1>Direct Inquiries & Messages</h1>
+          <p>Messages submitted by parents, students, and visitors via the St. Mary's College portal contact form</p>
+        </div>
+        <button class="clay-btn clay-btn-secondary" onclick="loadContactMessages()"><i class="fa-solid fa-rotate"></i> Refresh Messages</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Submitted Date</th>
+              <th>Full Name</th>
+              <th>Email Address</th>
+              <th>Message Content</th>
+              <th>Status</th>
+              <th style="text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="admin-messages-body">
+            <tr><td colspan="6" style="text-align:center; padding:30px;">Loading messages...</td></tr>
           </tbody>
         </table>
       </div>
@@ -1860,6 +2051,37 @@ Sanduni Silva,10,B,Female,Kanthi Silva,+94772345678"></textarea>
     </div>
   </div>
 
+  <!-- Candidate Photo Inspection Modal -->
+  <div class="clay-modal-overlay" id="modal-photo-inspect" onclick="if(event.target===this)closeModal('modal-photo-inspect')">
+    <div class="clay-modal" style="max-width:580px; text-align:center;">
+      <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 class="modal-title" style="display:flex; align-items:center; gap:8px;">
+          <i class="fa-solid fa-id-badge" style="color:var(--primary);"></i>
+          <span>Verification Photo Inspector</span>
+        </h3>
+        <button class="modal-close" onclick="closeModal('modal-photo-inspect')">&times;</button>
+      </div>
+      <div style="background:var(--clay-surface-sunken); border-radius:18px; padding:16px; margin-bottom:16px; display:flex; justify-content:center; align-items:center;">
+        <img id="inspect-modal-img" src="" alt="Candidate portrait" style="max-height:360px; max-width:100%; border-radius:14px; object-fit:contain; box-shadow:0 8px 24px rgba(0,0,0,0.15);" />
+      </div>
+      <div style="text-align:left; background:white; border-radius:14px; padding:14px 18px; margin-bottom:20px; font-size:13px; line-height:1.6; border:1px solid rgba(0,0,0,0.06);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong id="inspect-modal-name" style="font-size:16px; color:var(--dark-text);">Full Name</strong>
+          <span id="inspect-modal-role" class="clay-badge">Role</span>
+        </div>
+        <div style="color:var(--secondary-text); margin-bottom:4px;"><i class="fa-solid fa-envelope" style="width:18px;"></i> <span id="inspect-modal-email"></span></div>
+        <div style="color:var(--secondary-text); margin-bottom:4px;"><i class="fa-solid fa-id-card" style="width:18px;"></i> <span id="inspect-modal-id"></span></div>
+        <div style="color:var(--secondary-text); margin-bottom:4px;"><i class="fa-solid fa-calendar" style="width:18px;"></i> Submitted: <span id="inspect-modal-date"></span></div>
+        <div style="color:var(--secondary-text);"><i class="fa-solid fa-shield-halved" style="width:18px;"></i> Email Status: <span id="inspect-modal-status"></span></div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="clay-btn clay-btn-secondary" onclick="closeModal('modal-photo-inspect')">Close</button>
+        <button type="button" class="clay-btn clay-btn-danger" id="inspect-btn-reject"><i class="fa-solid fa-xmark"></i> Reject</button>
+        <button type="button" class="clay-btn clay-btn-success" id="inspect-btn-approve"><i class="fa-solid fa-check"></i> Approve Registration</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast-container"></div>
 
@@ -1868,6 +2090,9 @@ Sanduni Silva,10,B,Female,Kanthi Silva,+94772345678"></textarea>
     // State
     let studentsCache = [];
     let teachersCache = [];
+    let pendingApprovalsCache = [];
+    let contactMessagesCache = [];
+    let activeApprovalFilter = 'all';
     let currentTab = 'overview';
 
     // Initialize
@@ -1886,6 +2111,8 @@ Sanduni Silva,10,B,Female,Kanthi Silva,+94772345678"></textarea>
       }
 
       loadDashboardStats();
+      loadPendingApprovals();
+      loadContactMessages();
       loadStudents();
       loadTeachers();
       loadClasses();
@@ -1916,6 +2143,8 @@ Sanduni Silva,10,B,Female,Kanthi Silva,+94772345678"></textarea>
 
       // Refresh specific tab data if needed
       if (tabName === 'overview') loadDashboardStats();
+      if (tabName === 'approvals') loadPendingApprovals();
+      if (tabName === 'messages') loadContactMessages();
       if (tabName === 'students') loadStudents();
       if (tabName === 'teachers') loadTeachers();
       if (tabName === 'users') loadUsers();
@@ -1968,6 +2197,26 @@ Sanduni Silva,10,B,Female,Kanthi Silva,+94772345678"></textarea>
           document.getElementById('stat-assignments').innerText = stats.activeAssignments || 10;
           document.getElementById('stat-materials').innerText = stats.totalMaterials || 15;
 
+          const pendingEl = document.getElementById('stat-pending-approvals');
+          if (pendingEl) pendingEl.innerText = stats.pendingApprovals ?? 0;
+
+          const msgStatEl = document.getElementById('stat-contact-messages');
+          if (msgStatEl) msgStatEl.innerText = stats.contactMessagesCount ?? 0;
+
+          const sidebarCount = document.getElementById('sidebar-approvals-count');
+          if (sidebarCount) {
+            const count = stats.pendingApprovals || 0;
+            sidebarCount.innerText = count;
+            sidebarCount.style.display = count > 0 ? 'inline-block' : 'none';
+          }
+
+          const msgSidebarCount = document.getElementById('sidebar-messages-count');
+          if (msgSidebarCount) {
+            const mCount = stats.contactMessagesCount || 0;
+            msgSidebarCount.innerText = mCount;
+            msgSidebarCount.style.display = mCount > 0 ? 'inline-block' : 'none';
+          }
+
           // Render Recent Logs
           const logsContainer = document.getElementById('overview-recent-logs');
           if (json.data.recentLogs && json.data.recentLogs.length > 0) {
@@ -1986,6 +2235,348 @@ Sanduni Silva,10,B,Female,Kanthi Silva,+94772345678"></textarea>
         }
       } catch (err) {
         console.error('Error loading dashboard stats:', err);
+      }
+    }
+
+    // ==========================================
+    // CONTACT MESSAGES / INQUIRIES
+    // ==========================================
+    async function loadContactMessages() {
+      try {
+        const res = await fetch('/api/admin/contact-messages');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          contactMessagesCache = json.data;
+          renderContactMessages();
+        }
+      } catch (err) {
+        console.error('Error loading contact messages:', err);
+      }
+    }
+
+    function renderContactMessages() {
+      const tbody = document.getElementById('admin-messages-body');
+      if (!tbody) return;
+
+      if (!contactMessagesCache || contactMessagesCache.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:var(--secondary-text);">No visitor inquiries or messages found.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = contactMessagesCache.map(msg => {
+        const dateStr = msg.submittedAt ? new Date(msg.submittedAt).toLocaleString() : 'N/A';
+        const statusBadge = msg.read
+          ? '<span class="clay-badge badge-green">Read</span>'
+          : '<span class="clay-badge badge-pink">New / Unread</span>';
+
+        return \`
+          <tr style="\${!msg.read ? 'background:#FFF8FA;' : ''}">
+            <td style="font-size:0.82rem; color:var(--secondary-text); white-space:nowrap;">\${dateStr}</td>
+            <td style="font-weight:800; color:var(--dark-text);">\${escapeHtml(msg.fullName)}</td>
+            <td><a href="mailto:\${escapeHtml(msg.email)}" style="color:var(--royal-blue); text-decoration:none; font-weight:700;">\${escapeHtml(msg.email)}</a></td>
+            <td style="max-width:340px; font-size:0.88rem; line-height:1.5;">\${escapeHtml(msg.message)}</td>
+            <td>\${statusBadge}</td>
+            <td style="text-align:right;">
+              <div class="table-actions" style="justify-content:flex-end;">
+                \${!msg.read ? \`<button class="table-btn table-btn-view" title="Mark as Read" onclick="markMessageRead('\${msg._id}')"><i class="fa-solid fa-check"></i></button>\` : ''}
+                <button class="table-btn table-btn-delete" title="Delete Message" onclick="deleteContactMessage('\${msg._id}')"><i class="fa-solid fa-trash"></i></button>
+              </div>
+            </td>
+          </tr>
+        \`;
+      }).join('');
+    }
+
+    async function markMessageRead(msgId) {
+      try {
+        const res = await fetch(\`/api/admin/contact-messages/\${msgId}/read\`, { method: 'POST' });
+        const json = await res.json();
+        if (json.success) {
+          showToast('success', 'Message marked as read');
+          loadContactMessages();
+          loadDashboardStats();
+        }
+      } catch (err) {
+        showToast('error', 'Failed to update message');
+      }
+    }
+
+    async function deleteContactMessage(msgId) {
+      if (!confirm('Are you sure you want to delete this message?')) return;
+      try {
+        const res = await fetch(\`/api/admin/contact-messages/\${msgId}\`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.success) {
+          showToast('success', 'Message deleted');
+          loadContactMessages();
+          loadDashboardStats();
+        }
+      } catch (err) {
+        showToast('error', 'Failed to delete message');
+      }
+    }
+
+    // ==========================================
+    // 1b. REGISTRATION APPROVALS & PHOTO VERIFICATION
+    // ==========================================
+    async function loadPendingApprovals() {
+      const container = document.getElementById('approvals-cards-container');
+      if (container) {
+        container.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--secondary-text);"><i class="fa-solid fa-spinner fa-spin" style="font-size:1.8rem; margin-bottom:10px;"></i><br>Loading pending applications...</div>';
+      }
+      try {
+        const res = await fetch('/api/admin/pending-approvals');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          pendingApprovalsCache = json.data;
+          updateApprovalCounters();
+          renderApprovals();
+        } else {
+          showToast('error', json.message || 'Failed to load approvals');
+        }
+      } catch (err) {
+        console.error('Error loading pending approvals:', err);
+        showToast('error', 'Error connecting to approvals service');
+      }
+    }
+
+    function updateApprovalCounters() {
+      const total = pendingApprovalsCache.length;
+      const students = pendingApprovalsCache.filter(u => u.role === 'student').length;
+      const teachers = pendingApprovalsCache.filter(u => u.role === 'teacher').length;
+
+      const countAll = document.getElementById('count-approvals-all');
+      if (countAll) countAll.innerText = total;
+
+      const countStu = document.getElementById('count-approvals-student');
+      if (countStu) countStu.innerText = students;
+
+      const countTch = document.getElementById('count-approvals-teacher');
+      if (countTch) countTch.innerText = teachers;
+
+      const sidebarBadge = document.getElementById('sidebar-approvals-count');
+      if (sidebarBadge) {
+        sidebarBadge.innerText = total;
+        sidebarBadge.style.display = total > 0 ? 'inline-block' : 'none';
+      }
+
+      const statCard = document.getElementById('stat-pending-approvals');
+      if (statCard) statCard.innerText = total;
+    }
+
+    function filterApprovalsList(filter) {
+      activeApprovalFilter = filter;
+      const buttons = document.querySelectorAll('#approvals-filter-btns .table-btn');
+      buttons.forEach(btn => btn.classList.remove('active'));
+
+      if (filter === 'all') document.getElementById('btn-filter-all')?.classList.add('active');
+      if (filter === 'student') document.getElementById('btn-filter-student')?.classList.add('active');
+      if (filter === 'teacher') document.getElementById('btn-filter-teacher')?.classList.add('active');
+      if (filter === 'verified') document.getElementById('btn-filter-verified')?.classList.add('active');
+      if (filter === 'pending_verification') document.getElementById('btn-filter-pending')?.classList.add('active');
+
+      renderApprovals();
+    }
+
+    function searchApprovals(query) {
+      renderApprovals(query);
+    }
+
+    function renderApprovals(searchQuery = '') {
+      const container = document.getElementById('approvals-cards-container');
+      if (!container) return;
+
+      const q = (searchQuery || document.getElementById('approvals-search-input')?.value || '').trim().toLowerCase();
+
+      let items = pendingApprovalsCache.filter(item => {
+        if (activeApprovalFilter === 'student' && item.role !== 'student') return false;
+        if (activeApprovalFilter === 'teacher' && item.role !== 'teacher') return false;
+        if (activeApprovalFilter === 'verified' && !item.isVerified) return false;
+        if (activeApprovalFilter === 'pending_verification' && item.isVerified) return false;
+
+        if (q) {
+          const matchName = (item.name || '').toLowerCase().includes(q);
+          const matchEmail = (item.email || '').toLowerCase().includes(q);
+          const matchId = (item.phoneOrId || '').toLowerCase().includes(q);
+          return matchName || matchEmail || matchId;
+        }
+        return true;
+      });
+
+      if (items.length === 0) {
+        container.innerHTML = \`
+          <div class="clay-card" style="grid-column:1/-1; text-align:center; padding:60px 20px;">
+            <div style="font-size:3rem; margin-bottom:12px; color:var(--royal-blue);"><i class="fa-solid fa-clipboard-check"></i></div>
+            <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:8px;">No Pending Applications Found</h3>
+            <p style="color:var(--secondary-text); max-width:460px; margin:0 auto 16px;">
+              \${pendingApprovalsCache.length === 0
+                ? 'All student and faculty registrations have been processed. New applicant submissions will appear here automatically.'
+                : 'No candidate matches the selected filter criteria. Try clearing search or selecting All.'}
+            </p>
+            \${pendingApprovalsCache.length > 0 ? '<button class="clay-btn clay-btn-secondary" onclick="filterApprovalsList(\\'all\\')">Show All Pending</button>' : ''}
+          </div>
+        \`;
+        return;
+      }
+
+      container.innerHTML = items.map(cand => {
+        const isStu = cand.role === 'student';
+        const roleBadgeClass = isStu ? 'badge-blue' : 'badge-green';
+        const roleLabel = isStu ? 'Student Applicant' : 'Faculty / Teacher';
+        const roleIcon = isStu ? 'fa-user-graduate' : 'fa-chalkboard-user';
+        const idLabel = isStu ? 'Student ID / Reg #' : 'Staff / National ID';
+        const dateStr = cand.registeredAt ? new Date(cand.registeredAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent';
+        const avatar = cand.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200';
+
+        const verifiedBadge = cand.isVerified
+          ? '<span class="clay-badge badge-green" style="font-size:0.75rem;"><i class="fa-solid fa-circle-check"></i> Email Verified</span>'
+          : '<span class="clay-badge badge-yellow" style="font-size:0.75rem;"><i class="fa-solid fa-clock"></i> Email Pending</span>';
+
+        return \`
+          <div class="clay-card" style="padding:22px; display:flex; flex-direction:column; justify-content:space-between; position:relative; overflow:hidden;">
+            <div style="display:flex; align-items:flex-start; gap:16px; margin-bottom:16px;">
+              <div style="position:relative; cursor:pointer;" onclick="inspectPhoto('\${cand.id}')" title="Click to inspect uploaded photo">
+                <img src="\${escapeHtml(avatar)}" alt="\${escapeHtml(cand.name)}" style="width:72px; height:72px; border-radius:18px; object-fit:cover; border:2px solid var(--royal-blue); box-shadow:0 4px 10px rgba(0,0,0,0.1);" />
+                <div style="position:absolute; bottom:-4px; right:-4px; background:var(--royal-blue); color:white; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
+                  <i class="fa-solid fa-magnifying-glass-plus"></i>
+                </div>
+              </div>
+              <div style="flex:1; min-width:0;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+                  <span class="clay-badge \${roleBadgeClass}" style="font-size:0.75rem;">
+                    <i class="fa-solid \${roleIcon}"></i> \${roleLabel}
+                  </span>
+                  \${verifiedBadge}
+                </div>
+                <h4 style="font-family:'Poppins'; font-size:1.05rem; color:var(--dark-text); margin:0 0 2px 0; word-break:break-word;">
+                  \${escapeHtml(cand.name)}
+                </h4>
+                <div style="font-size:0.82rem; color:var(--secondary-text); word-break:break-word;">
+                  <i class="fa-solid fa-envelope" style="width:14px;"></i> \${escapeHtml(cand.email)}
+                </div>
+              </div>
+            </div>
+
+            <div style="background:#F6F9FF; border-radius:14px; padding:10px 14px; margin-bottom:16px; font-size:0.82rem; color:var(--secondary-text); line-height:1.5;">
+              <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span><strong>\${idLabel}:</strong></span>
+                <span style="font-family:monospace; font-weight:700; color:var(--royal-blue);">\${escapeHtml(cand.phoneOrId || 'N/A')}</span>
+              </div>
+              <div style="display:flex; justify-content:space-between;">
+                <span><strong>Registered:</strong></span>
+                <span>\${dateStr}</span>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+              <button class="clay-btn clay-btn-secondary" style="padding:8px 12px; font-size:0.82rem; justify-content:center;" onclick="inspectPhoto('\${cand.id}')">
+                <i class="fa-solid fa-id-badge"></i> Inspect Photo
+              </button>
+              <button class="clay-btn clay-btn-success" style="padding:8px 12px; font-size:0.82rem; justify-content:center;" onclick="approveCandidate('\${cand.id}', '\${escapeHtml(cand.name).replace(/'/g, \"\\\\'\")}')">
+                <i class="fa-solid fa-check"></i> Approve
+              </button>
+              <button class="clay-btn clay-btn-danger" style="grid-column:span 2; padding:8px 12px; font-size:0.82rem; justify-content:center;" onclick="rejectCandidatePrompt('\${cand.id}', '\${escapeHtml(cand.name).replace(/'/g, \"\\\\'\")}')">
+                <i class="fa-solid fa-xmark"></i> Reject Application
+              </button>
+            </div>
+          </div>
+        \`;
+      }).join('');
+    }
+
+    function inspectPhoto(userId) {
+      const cand = pendingApprovalsCache.find(u => u.id === userId);
+      if (!cand) return;
+
+      const imgEl = document.getElementById('inspect-modal-img');
+      if (imgEl) imgEl.src = cand.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600';
+
+      const nameEl = document.getElementById('inspect-modal-name');
+      if (nameEl) nameEl.innerText = cand.name || 'Candidate';
+
+      const roleEl = document.getElementById('inspect-modal-role');
+      if (roleEl) {
+        roleEl.innerText = cand.role === 'teacher' ? 'Faculty / Teacher' : 'Student Applicant';
+        roleEl.className = 'clay-badge ' + (cand.role === 'teacher' ? 'badge-green' : 'badge-blue');
+      }
+
+      const emailEl = document.getElementById('inspect-modal-email');
+      if (emailEl) emailEl.innerText = cand.email || '';
+
+      const idEl = document.getElementById('inspect-modal-id');
+      if (idEl) idEl.innerText = (cand.role === 'teacher' ? 'Staff ID / Phone: ' : 'Student ID: ') + (cand.phoneOrId || 'N/A');
+
+      const dateEl = document.getElementById('inspect-modal-date');
+      if (dateEl) dateEl.innerText = cand.registeredAt ? new Date(cand.registeredAt).toLocaleString() : 'N/A';
+
+      const statusEl = document.getElementById('inspect-modal-status');
+      if (statusEl) {
+        statusEl.innerHTML = cand.isVerified
+          ? '<span style="color:#10B981; font-weight:700;">Verified via Resend</span>'
+          : '<span style="color:#F59E0B; font-weight:700;">Verification Pending (Token Sent)</span>';
+      }
+
+      const approveBtn = document.getElementById('inspect-btn-approve');
+      if (approveBtn) {
+        approveBtn.onclick = () => approveCandidate(cand.id, cand.name);
+      }
+
+      const rejectBtn = document.getElementById('inspect-btn-reject');
+      if (rejectBtn) {
+        rejectBtn.onclick = () => rejectCandidatePrompt(cand.id, cand.name);
+      }
+
+      openModal('modal-photo-inspect');
+    }
+
+    async function approveCandidate(userId, candidateName) {
+      if (!confirm(\`Are you sure you want to approve \${candidateName}? This will grant them active LMS access.\`)) {
+        return;
+      }
+      try {
+        const res = await fetch(\`/api/admin/approve-user/\${userId}\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const json = await res.json();
+        if (json.success) {
+          showToast('success', json.message || \`Account approved for \${candidateName}\`);
+          closeModal('modal-photo-inspect');
+          loadPendingApprovals();
+          loadDashboardStats();
+          loadStudents();
+          loadTeachers();
+        } else {
+          showToast('error', json.message || 'Approval failed');
+        }
+      } catch (err) {
+        console.error('Approval error:', err);
+        showToast('error', 'Failed to approve registration');
+      }
+    }
+
+    async function rejectCandidatePrompt(userId, candidateName) {
+      const reason = prompt(\`Enter rejection reason for \${candidateName} (e.g., Unclear portrait photo or invalid ID):\`, 'Verification requirements not met / invalid profile picture');
+      if (reason === null) return;
+
+      try {
+        const res = await fetch(\`/api/admin/reject-user/\${userId}\`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: reason.trim() })
+        });
+        const json = await res.json();
+        if (json.success) {
+          showToast('success', json.message || \`Application rejected for \${candidateName}\`);
+          closeModal('modal-photo-inspect');
+          loadPendingApprovals();
+          loadDashboardStats();
+        } else {
+          showToast('error', json.message || 'Rejection failed');
+        }
+      } catch (err) {
+        console.error('Rejection error:', err);
+        showToast('error', 'Failed to reject registration');
       }
     }
 

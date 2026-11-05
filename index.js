@@ -11,6 +11,8 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const path = require('path');
+const crypto = require('crypto');
+const { Resend } = require('resend');
 const { createAdminRouter, renderAdminPage } = require('./admin');
 
 // Environment Configuration
@@ -19,6 +21,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'stmarys_jwt_super_secret_key_2026_
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const MONGODB_URI = process.env.MONGODB_URI || '';
 const PRINCIPAL_SETUP_SECRET = process.env.PRINCIPAL_SETUP_SECRET || 'stmarys_principal_setup_2026';
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const EMAIL_FROM = process.env.EMAIL_FROM || "St. Mary's College Negombo <onboarding@resend.dev>";
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 const app = express();
 
@@ -32,8 +37,141 @@ app.use((req, res, next) => {
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
+// MongoDB Atlas Mongoose Schema (User Model)
+const UserSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  passwordHash: { type: String, required: true },
+  role: { type: String, enum: ['student', 'teacher', 'principal'], required: true },
+  name: { type: String, required: true, trim: true },
+  phoneOrId: { type: String, default: '' },
+  avatarUrl: { type: String, default: '' },
+  isVerified: { type: Boolean, default: false },
+  isApproved: { type: Boolean, default: false },
+  status: {
+    type: String,
+    enum: ['pending_verification', 'pending_approval', 'approved', 'rejected', 'active', 'deactivated'],
+    default: 'pending_verification'
+  },
+  verificationToken: { type: String, default: null },
+  verificationExpires: { type: Date, default: null },
+  registeredAt: { type: Date, default: Date.now },
+  approvedAt: { type: Date },
+  approvedBy: { type: String },
+  rejectionReason: { type: String }
+}, { timestamps: true });
+
+const UserModel = mongoose.models.User || mongoose.model('User', UserSchema);
+
+// Cloudinary Profile Photo Helper
+async function uploadToCloudinaryIfConfigured(base64OrUrl) {
+  if (!base64OrUrl) return '';
+  if (!base64OrUrl.startsWith('data:image/')) {
+    return base64OrUrl;
+  }
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (!cloudName || !apiKey || !apiSecret) {
+    return base64OrUrl;
+  }
+  try {
+    const timestamp = Math.round(Date.now() / 1000);
+    const signatureStr = `timestamp=${timestamp}${apiSecret}`;
+    const signature = crypto.createHash('sha1').update(signatureStr).digest('hex');
+    const formData = new URLSearchParams();
+    formData.append('file', base64OrUrl);
+    formData.append('api_key', apiKey);
+    formData.append('timestamp', timestamp);
+    formData.append('signature', signature);
+    const resp = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    const json = await resp.json();
+    if (json.secure_url) {
+      return json.secure_url;
+    }
+  } catch (err) {
+    console.warn('Cloudinary upload error, storing image data directly:', err.message);
+  }
+  return base64OrUrl;
+}
+
+// Resend Email Confirmation Dispatcher
+async function sendVerificationEmail({ to, name, token, role, req }) {
+  const protocol = req && req.protocol ? req.protocol : 'http';
+  const host = req && req.get ? req.get('host') : `localhost:${PORT}`;
+  const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
+
+  const subject = `Verify Your Email Address | St. Mary's College Negombo LMS`;
+  const roleDisplay = role === 'teacher' ? 'Faculty Teacher' : 'Student';
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #F3F6FF; margin: 0; padding: 24px; color: #26324B; }
+    .card { max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 20px; padding: 36px 32px; box-shadow: 0 10px 30px rgba(49, 89, 201, 0.1); border: 1px solid #E6EEFA; }
+    .header { text-align: center; margin-bottom: 24px; }
+    .crest { display: inline-block; width: 56px; height: 56px; line-height: 56px; border-radius: 16px; background: linear-gradient(135deg, #3159C9, #4F7DF3); color: #FFD66B; font-size: 26px; text-align: center; font-weight: bold; }
+    h1 { font-size: 22px; color: #3159C9; margin: 16px 0 6px; }
+    p { font-size: 15px; line-height: 1.6; color: #53647E; margin: 12px 0; }
+    .btn { display: inline-block; background: linear-gradient(135deg, #4F7DF3, #3159C9); color: #ffffff !important; padding: 14px 32px; border-radius: 14px; text-decoration: none; font-weight: 700; font-size: 15px; margin: 20px 0; text-align: center; box-shadow: 0 6px 16px rgba(49, 89, 201, 0.3); }
+    .notice-box { background: #FFF8E1; border-left: 4px solid #F39C12; padding: 14px 16px; border-radius: 10px; font-size: 13px; color: #7B5000; margin-top: 20px; }
+    .footer { text-align: center; font-size: 12px; color: #94A3B8; margin-top: 30px; border-top: 1px solid #EDF2F9; padding-top: 18px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="crest">🎓</div>
+      <h1>St. Mary's College Negombo</h1>
+      <p style="color:#75819A; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Learning Management System • Account Verification</p>
+    </div>
+    <p>Dear <strong>${name}</strong>,</p>
+    <p>Thank you for submitting your registration as a <strong>${roleDisplay}</strong> on the official St. Mary's College Negombo LMS portal.</p>
+    <p>Please click the button below to confirm your email address and submit your application to the Principal for verification:</p>
+    <div style="text-align: center;">
+      <a href="${verifyUrl}" class="btn" target="_blank">Confirm My Email Address</a>
+    </div>
+    <p style="font-size: 13px; color: #75819A;">Or open this verification URL directly:<br><a href="${verifyUrl}" style="color: #4F7DF3; word-break: break-all;">${verifyUrl}</a></p>
+    <div class="notice-box">
+      <strong>Mandatory Next Step:</strong> Following email verification, your uploaded verification photograph and school identification will be verified by Rev. Fr. Principal Ranjith before your account login is activated.
+    </div>
+    <div class="footer">
+      &copy; 2026 St. Mary's College Negombo. Western Province, Sri Lanka.
+    </div>
+  </div>
+</body>
+</html>`;
+
+  if (resend) {
+    try {
+      const { data, error } = await resend.emails.send({
+        from: EMAIL_FROM,
+        to,
+        subject,
+        html
+      });
+      if (error) {
+        console.warn('Resend email API warning:', error);
+        return { sent: false, error: error.message, verifyUrl };
+      }
+      return { sent: true, data, verifyUrl };
+    } catch (err) {
+      console.warn('Resend send error:', err.message);
+      return { sent: false, error: err.message, verifyUrl };
+    }
+  } else {
+    console.log(`[Dev Mode] Resend API key unset. Verification link for ${to}: ${verifyUrl}`);
+    return { sent: false, devPreview: true, verifyUrl };
+  }
+}
 
 // Mongoose Connection Management (Cached for Vercel Serverless)
 let cachedMongoose = global.mongoose;
@@ -79,13 +217,14 @@ const memStore = {
   attendance: [],
   results: [],
   announcements: [],
+  contactMessages: [],
   timetable: [],
   activityLogs: [],
   settings: {
     schoolName: "St. Mary's College Negombo",
     motto: "Empowering Students. Inspiring Excellence. Building Tomorrow.",
-    email: "info@stmarysnegombo.example",
-    phone: "+94 31 555 0123",
+    email: "smcnegombomediaunit@gmail.com",
+    phone: "0312 222 594",
     address: "Negombo, Western Province, Sri Lanka",
     currentYear: "2026",
     currentTerm: "Term 1"
@@ -104,6 +243,10 @@ function seedInitialData() {
     passwordHash: hashPass('Principal@123'),
     role: 'principal',
     name: 'Rev. Fr. Principal Ranjith',
+    phoneOrId: 'PRI-001',
+    avatarUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=200&fit=crop&crop=faces',
+    isVerified: true,
+    isApproved: true,
     status: 'active',
     createdAt: new Date()
   };
@@ -111,11 +254,11 @@ function seedInitialData() {
 
   // 2. Teachers (5 Faculty)
   const teachersData = [
-    { id: 'TCH-001', name: 'Mr. Sunil Perera', email: 'perera@stmarys.lk', phone: '+94 71 555 0101', subjects: ['Mathematics'], classes: ['Grade 10A', 'Grade 11A'], qualification: 'B.Sc. Mathematics, PGDE' },
-    { id: 'TCH-002', name: 'Mrs. Nilanthi Silva', email: 'silva@stmarys.lk', phone: '+94 71 555 0102', subjects: ['Science'], classes: ['Grade 10A', 'Grade 10B'], qualification: 'B.Sc. Chemistry, M.Sc.' },
-    { id: 'TCH-003', name: 'Ms. Shenali Fernando', email: 'fernando@stmarys.lk', phone: '+94 71 555 0103', subjects: ['English'], classes: ['Grade 10A', 'Grade 11B'], qualification: 'B.A. English Literature' },
-    { id: 'TCH-004', name: 'Mr. Kusal Mendis', email: 'mendis@stmarys.lk', phone: '+94 71 555 0104', subjects: ['ICT'], classes: ['Grade 10A', 'Grade 11A'], qualification: 'B.Sc. Computer Science' },
-    { id: 'TCH-005', name: 'Mrs. Anoma Jayasinghe', email: 'jayasinghe@stmarys.lk', phone: '+94 71 555 0105', subjects: ['History'], classes: ['Grade 10A', 'Grade 9A'], qualification: 'B.A. History & Archaeology' }
+    { id: 'TCH-001', name: 'Mr. Sunil Perera', email: 'perera@stmarys.lk', phone: '+94 71 555 0101', subjects: ['Mathematics'], classes: ['Grade 10A', 'Grade 11A'], qualification: 'B.Sc. Mathematics, PGDE', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&fit=crop&crop=faces' },
+    { id: 'TCH-002', name: 'Mrs. Nilanthi Silva', email: 'silva@stmarys.lk', phone: '+94 71 555 0102', subjects: ['Science'], classes: ['Grade 10A', 'Grade 10B'], qualification: 'B.Sc. Chemistry, M.Sc.', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&fit=crop&crop=faces' },
+    { id: 'TCH-003', name: 'Ms. Shenali Fernando', email: 'fernando@stmarys.lk', phone: '+94 71 555 0103', subjects: ['English'], classes: ['Grade 10A', 'Grade 11B'], qualification: 'B.A. English Literature', avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=200&fit=crop&crop=faces' },
+    { id: 'TCH-004', name: 'Mr. Kusal Mendis', email: 'mendis@stmarys.lk', phone: '+94 71 555 0104', subjects: ['ICT'], classes: ['Grade 10A', 'Grade 11A'], qualification: 'B.Sc. Computer Science', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&fit=crop&crop=faces' },
+    { id: 'TCH-005', name: 'Mrs. Anoma Jayasinghe', email: 'jayasinghe@stmarys.lk', phone: '+94 71 555 0105', subjects: ['History'], classes: ['Grade 10A', 'Grade 9A'], qualification: 'B.A. History & Archaeology', avatarUrl: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=200&fit=crop&crop=faces' }
   ];
 
   teachersData.forEach((t, i) => {
@@ -125,6 +268,10 @@ function seedInitialData() {
       passwordHash: hashPass('Teacher@123'),
       role: 'teacher',
       name: t.name,
+      phoneOrId: t.id,
+      avatarUrl: t.avatarUrl,
+      isVerified: true,
+      isApproved: true,
       status: 'active',
       createdAt: new Date()
     };
@@ -214,6 +361,10 @@ function seedInitialData() {
       passwordHash: hashPass('Student@123'),
       role: 'student',
       name: s.name,
+      phoneOrId: sId,
+      avatarUrl: `https://images.unsplash.com/photo-${1534528741775 + idx * 1000}?w=200&fit=crop&crop=faces`,
+      isVerified: true,
+      isApproved: true,
       status: 'active',
       createdAt: new Date()
     };
@@ -229,9 +380,45 @@ function seedInitialData() {
       gender: s.gender,
       parentName: s.parent,
       parentPhone: `+94 77 ${100 + idx} 4567`,
-      academicYear: '2026'
+      academicYear: '2026',
+      avatarUrl: usr.avatarUrl
     });
   });
+
+  // Sample Pending Registrations for Principal Verification Demo
+  // Candidate 1: Student (Email verified, awaiting Principal photo inspection & approval)
+  const pendingStudent = {
+    _id: 'usr_pending_stu1',
+    email: 'dineth.student@example.com',
+    passwordHash: hashPass('Student@123'),
+    role: 'student',
+    name: 'Dineth Perera',
+    phoneOrId: 'STU2026-901',
+    avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&fit=crop&crop=faces',
+    isVerified: true,
+    isApproved: false,
+    status: 'pending_approval',
+    registeredAt: new Date(Date.now() - 3600000 * 5)
+  };
+  memStore.users.push(pendingStudent);
+
+  // Candidate 2: Teacher (Awaiting email confirmation)
+  const pendingTeacher = {
+    _id: 'usr_pending_tch1',
+    email: 'chandani.teacher@example.com',
+    passwordHash: hashPass('Teacher@123'),
+    role: 'teacher',
+    name: 'Mrs. Chandani Wijesekara',
+    phoneOrId: '+94 71 888 9902',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&fit=crop&crop=faces',
+    isVerified: false,
+    isApproved: false,
+    status: 'pending_verification',
+    verificationToken: 'demo_token_chandani_2026',
+    verificationExpires: new Date(Date.now() + 86400000),
+    registeredAt: new Date(Date.now() - 3600000 * 2)
+  };
+  memStore.users.push(pendingTeacher);
 
   // 6. Learning Materials (15 Items)
   const sampleMaterials = [
@@ -417,55 +604,75 @@ function seedInitialData() {
     });
   });
 
-  // 11. Announcements (5 Official Notices)
+  // 11. Announcements (Official Notices)
   const announcementsList = [
     {
       _id: 'ann_1',
-      title: "Annual Inter-House Athletic Meet 2026",
-      content: "St. Mary's College Negombo Annual Inter-House Athletic Championship will be held at the Negombo Municipal Ground on April 5th. All house members are requested to complete preliminary heats by Friday.",
-      category: "Sports",
-      targetAudience: "Everyone",
-      publishedDate: new Date('2026-03-15'),
-      createdBy: "Rev. Fr. Principal Ranjith"
+      title: "01.Third Term examination in November Mid",
+      content: "Third Term examinations for Grades 6 through 13 are scheduled to commence in mid-November 2026. All students can access their subject portals to download past examination review packs and syllabi.",
+      category: "Academic",
+      targetAudience: "Students",
+      publishedDate: new Date('2026-11-15'),
+      createdBy: "Academic Board"
     },
     {
       _id: 'ann_2',
-      title: "First Term Examination Timetable Released",
-      content: "The First Term Examinations for Grades 6-13 will commence on April 20th, 2026. Students must access their subject portals to download past examination review packs and syllabi.",
-      category: "Academic",
-      targetAudience: "Students",
-      publishedDate: new Date('2026-03-18'),
-      createdBy: "Academic Board"
+      title: "02. Annual Inter-House Athletic Meet 2027 early of february expected",
+      content: "The St. Mary's College Negombo Annual Inter-House Athletic Meet 2027 is expected to take place in early February 2027 at the Negombo Municipal Ground. Preliminary track and field trials will begin in January.",
+      category: "Sports",
+      targetAudience: "Everyone",
+      publishedDate: new Date('2027-02-01'),
+      createdBy: "Rev. Fr. Principal Ranjith"
     },
     {
       _id: 'ann_3',
       title: "Marian Science Day & Robotics Exhibition",
-      content: "The Young Scientists Club invites registrations for the Inter-School Robotics & Science Innovation Showcase. Submission of project blueprints closes on April 10th.",
+      content: "The Young Scientists Club invites registrations for the Inter-School Robotics & Science Innovation Showcase. Submission of project blueprints closes soon.",
       category: "Event",
       targetAudience: "Everyone",
-      publishedDate: new Date('2026-03-20'),
+      publishedDate: new Date('2026-10-20'),
       createdBy: "Mrs. Nilanthi Silva"
     },
     {
       _id: 'ann_4',
       title: "Faculty Staff Development Workshop on Modern LMS",
-      content: "A professional development session on utilizing the St. Mary's LMS interactive examination & submission grading system will be conducted on Wednesday at 2:00 PM in the College Auditorium.",
+      content: "A professional development session on utilizing the St. Mary's LMS interactive examination & submission grading system will be conducted in the College Auditorium.",
       category: "Notice",
       targetAudience: "Teachers",
-      publishedDate: new Date('2026-03-22'),
+      publishedDate: new Date('2026-10-25'),
       createdBy: "Rev. Fr. Principal Ranjith"
     },
     {
       _id: 'ann_5',
       title: "Parent-Teacher Academic Progress Consultation",
-      content: "Grade 10 and 11 Parents Consultation meetings are scheduled for Saturday, April 12th. Individual student academic performance profiles can be reviewed directly via the parent portal.",
+      content: "Grade 10 and 11 Parents Consultation meetings are scheduled. Individual student academic performance profiles can be reviewed directly via the LMS portal.",
       category: "Notice",
       targetAudience: "Everyone",
-      publishedDate: new Date('2026-03-24'),
+      publishedDate: new Date('2026-11-01'),
       createdBy: "Administration Office"
     }
   ];
   memStore.announcements = announcementsList;
+
+  // 12. Contact Messages
+  memStore.contactMessages = [
+    {
+      _id: 'msg_1',
+      fullName: 'Gamini Fernando (Parent)',
+      email: 'gamini.f@gmail.com',
+      message: 'Dear Rev. Fr. Principal, I would like to inquire about the Grade 10 GCE O/L exam preparation schedule and ICT lab facilities.',
+      submittedAt: new Date(Date.now() - 3600000 * 5),
+      read: false
+    },
+    {
+      _id: 'msg_2',
+      fullName: 'Samanthi Perera',
+      email: 'samanthi.p@yahoo.com',
+      message: 'Good day Father. Please let us know if admissions for A/L Bio Science stream 2027 are currently open for external candidates.',
+      submittedAt: new Date(Date.now() - 3600000 * 24),
+      read: false
+    }
+  ];
 
   // 12. Activity Logs
   memStore.activityLogs.push(
@@ -500,6 +707,8 @@ async function logActivity(action, user, target = '', details = '') {
 const store = {
   // Principal & Admin Queries
   async getAdminStats() {
+    const pendingCount = memStore.users.filter(u => u.isApproved === false || u.status === 'pending_approval' || u.status === 'pending_verification').length;
+    const msgCount = (memStore.contactMessages || []).length;
     return {
       totalStudents: memStore.students.length,
       totalTeachers: memStore.teachers.length,
@@ -507,9 +716,48 @@ const store = {
       totalSubjects: memStore.subjects.length,
       activeAssignments: memStore.assignments.length,
       totalMaterials: memStore.materials.length,
+      pendingApprovals: pendingCount,
+      contactMessagesCount: msgCount,
       averageAttendance: '94.8%',
       academicAverage: '82.4%'
     };
+  },
+  async createContactMessage(data) {
+    const msg = {
+      _id: `msg_${Date.now()}`,
+      fullName: data.fullName,
+      email: data.email,
+      message: data.message,
+      submittedAt: new Date(),
+      read: false
+    };
+    if (!memStore.contactMessages) memStore.contactMessages = [];
+    memStore.contactMessages.unshift(msg);
+    if (cachedMongoose && cachedMongoose.conn) {
+      try {
+        await ContactMessageModel.create({
+          fullName: msg.fullName,
+          email: msg.email,
+          message: msg.message,
+          submittedAt: msg.submittedAt,
+          read: false
+        });
+      } catch (_) {}
+    }
+    return msg;
+  },
+  async getContactMessages() {
+    return memStore.contactMessages || [];
+  },
+  async markContactMessageRead(msgId) {
+    const msg = (memStore.contactMessages || []).find(m => m._id === msgId);
+    if (msg) msg.read = true;
+    return msg;
+  },
+  async deleteContactMessage(msgId) {
+    const idx = (memStore.contactMessages || []).findIndex(m => m._id === msgId);
+    if (idx !== -1) memStore.contactMessages.splice(idx, 1);
+    return true;
   },
   async getStudents({ search = '', grade = '', className = '', page = 1, limit = 50 }) {
     let list = [...memStore.students];
@@ -749,6 +997,92 @@ const store = {
   async getUsers() {
     return memStore.users.map(({ passwordHash, ...u }) => u);
   },
+  async getPendingRegistrations() {
+    return memStore.users
+      .filter(u => u.isApproved === false || u.status === 'pending_approval' || u.status === 'pending_verification')
+      .map(({ passwordHash, ...u }) => ({ id: u._id || u.id, ...u }));
+  },
+  async approveUser(userId, principalName) {
+    const user = memStore.users.find(u => u._id === userId || u.id === userId || u.email === userId);
+    if (!user) return null;
+    user.isApproved = true;
+    user.status = 'approved';
+    user.approvedAt = new Date();
+    user.approvedBy = principalName || 'Rev. Fr. Principal Ranjith';
+
+    if (user.role === 'student') {
+      const existingStudent = memStore.students.find(s => s.userId === user._id || s.email === user.email);
+      if (!existingStudent) {
+        const nextIdx = memStore.students.length + 1;
+        const studentId = (user.phoneOrId && user.phoneOrId.startsWith('STU')) ? user.phoneOrId : `STU2026-${String(nextIdx).padStart(3, '0')}`;
+        memStore.students.push({
+          _id: `stu_${Date.now()}`,
+          userId: user._id,
+          studentId,
+          fullName: user.name,
+          email: user.email,
+          grade: '10',
+          className: 'A',
+          gender: 'Not Specified',
+          parentName: 'Parent / Guardian',
+          parentPhone: user.phoneOrId || '+94 77 000 0000',
+          academicYear: '2026',
+          avatarUrl: user.avatarUrl
+        });
+      }
+    } else if (user.role === 'teacher') {
+      const existingTeacher = memStore.teachers.find(t => t.userId === user._id || t.email === user.email);
+      if (!existingTeacher) {
+        const nextIdx = memStore.teachers.length + 1;
+        const teacherId = (user.phoneOrId && user.phoneOrId.startsWith('TCH')) ? user.phoneOrId : `TCH-${String(nextIdx).padStart(3, '0')}`;
+        memStore.teachers.push({
+          _id: `tch_${Date.now()}`,
+          userId: user._id,
+          teacherId,
+          fullName: user.name,
+          email: user.email,
+          phone: user.phoneOrId || '',
+          qualification: 'Faculty Educator',
+          assignedSubjects: ['General'],
+          assignedClasses: ['Grade 10A'],
+          avatarUrl: user.avatarUrl
+        });
+      }
+    }
+
+    if (cachedMongoose && cachedMongoose.conn) {
+      try {
+        await UserModel.updateOne(
+          { email: user.email },
+          { isApproved: true, status: 'approved', approvedAt: user.approvedAt, approvedBy: user.approvedBy }
+        );
+      } catch (_) {}
+    }
+
+    const { passwordHash, ...safe } = user;
+    return safe;
+  },
+  async rejectUser(userId, reason, principalName) {
+    const user = memStore.users.find(u => u._id === userId || u.id === userId || u.email === userId);
+    if (!user) return null;
+    user.isApproved = false;
+    user.status = 'rejected';
+    user.rejectionReason = reason || 'Institutional verification declined.';
+    user.rejectedAt = new Date();
+    user.rejectedBy = principalName || 'Rev. Fr. Principal Ranjith';
+
+    if (cachedMongoose && cachedMongoose.conn) {
+      try {
+        await UserModel.updateOne(
+          { email: user.email },
+          { isApproved: false, status: 'rejected', rejectionReason: user.rejectionReason }
+        );
+      } catch (_) {}
+    }
+
+    const { passwordHash, ...safe } = user;
+    return safe;
+  },
   async updateUserStatus(id, status) {
     const u = memStore.users.find(x => x._id === id || x.email === id);
     if (u) u.status = status;
@@ -814,6 +1148,15 @@ function requireAuth(allowedRoles = []) {
   <title>Verifying Session | St. Mary's College LMS</title>
   <script>
     (function() {
+      try {
+        window.addEventListener('error', function(e) {
+          if (e && ((e.filename && e.filename.indexOf('chrome-extension://') !== -1) ||
+              (e.message && e.message.indexOf('fetch') !== -1 && e.message.indexOf('getter') !== -1))) {
+            if (typeof e.preventDefault === 'function') e.preventDefault();
+            return true;
+          }
+        }, true);
+      } catch (_) {}
       if (window.location.search.indexOf('token=') !== -1) {
         try {
           localStorage.removeItem('stmarys_token');
@@ -844,10 +1187,19 @@ function requireAuth(allowedRoles = []) {
       return res.status(401).json({ success: false, message: 'Authentication required' });
     }
     if (allowedRoles.length > 0 && !allowedRoles.includes(req.user.role)) {
+      let targetDashboard = '/login';
+      if (req.user.role === 'student') targetDashboard = '/student/dashboard';
+      else if (req.user.role === 'teacher') targetDashboard = '/teacher/dashboard';
+      else if (req.user.role === 'principal') targetDashboard = '/admin';
+
       if (req.accepts('html')) {
-        return res.status(403).send(renderUnauthorizedPage());
+        return res.status(403).send(renderUnauthorizedPage(req.user, targetDashboard));
       }
-      return res.status(403).json({ success: false, message: 'Forbidden. Insufficient permissions.' });
+      return res.status(403).json({
+        success: false,
+        message: `Access Denied: Accounts registered as ${req.user.role} cannot access this endpoint.`,
+        redirectUrl: targetDashboard
+      });
     }
     next();
   };
@@ -901,6 +1253,35 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
+    // Email verification check
+    if (user.isVerified === false) {
+      return res.status(403).json({
+        success: false,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email address before signing in. Check your inbox for the confirmation link.',
+        email: user.email,
+        requiresVerification: true
+      });
+    }
+
+    // Principal approval check
+    if (user.isApproved === false) {
+      if (user.status === 'rejected') {
+        return res.status(403).json({
+          success: false,
+          code: 'ACCOUNT_REJECTED',
+          message: `Your account registration was reviewed and declined: ${user.rejectionReason || 'Please contact school administration.'}`,
+          status: 'rejected'
+        });
+      }
+      return res.status(403).json({
+        success: false,
+        code: 'PENDING_APPROVAL',
+        message: 'Your account is pending Principal approval. Rev. Fr. Principal Ranjith is reviewing your profile photo and school credentials.',
+        status: user.status || 'pending_approval'
+      });
+    }
+
     // Role verification
     if (role && role !== user.role) {
       return res.status(401).json({ success: false, message: `Access denied. Account is registered as ${user.role}.` });
@@ -941,6 +1322,286 @@ app.post('/api/auth/login', rateLimitLogin, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// USER REGISTRATION & EMAIL VERIFICATION APIs
+// -------------------------------------------------------------
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { role, fullName, email, password, phoneOrId, avatar } = req.body;
+
+    // 1. Validate Account Type (Student vs Teacher)
+    if (!role || !['student', 'teacher'].includes(role.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please choose a valid account type: "Student" or "Teacher".'
+      });
+    }
+    const selectedRole = role.toLowerCase();
+
+    // 2. Validate Standard Fields
+    if (!fullName || !fullName.trim()) {
+      return res.status(400).json({ success: false, message: 'Full Name is required.' });
+    }
+    if (!email || !email.trim() || !email.includes('@')) {
+      return res.status(400).json({ success: false, message: 'A valid email address is required.' });
+    }
+    if (!password || password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
+    }
+    if (!phoneOrId || !phoneOrId.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: selectedRole === 'teacher' ? 'Phone or Teacher Staff ID number is required.' : 'Phone or Student Admission ID is required.'
+      });
+    }
+
+    // 3. Mandatory Profile Photo Check
+    if (!avatar || typeof avatar !== 'string' || avatar.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'PHOTO_REQUIRED',
+        message: 'Please upload a clear, real photo of yourself for school verification. Profile photo is mandatory.'
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 4. Duplicate Check
+    const existing = memStore.users.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: 'An account with this email address already exists. If this is your account, please sign in or check your verification status.'
+      });
+    }
+
+    // 5. Cloudinary / Image Storage Processing
+    const avatarUrl = await uploadToCloudinaryIfConfigured(avatar.trim());
+
+    // 6. Security Tokens & Password Hashing
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(password, salt);
+
+    // 7. Create User Record (Default: isVerified: false, isApproved: false)
+    const newUser = {
+      _id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      email: normalizedEmail,
+      passwordHash,
+      role: selectedRole,
+      name: fullName.trim(),
+      phoneOrId: phoneOrId.trim(),
+      avatarUrl,
+      isVerified: false,
+      isApproved: false,
+      status: 'pending_verification',
+      verificationToken,
+      verificationExpires,
+      registeredAt: new Date()
+    };
+
+    memStore.users.push(newUser);
+
+    // Save to Mongoose if MongoDB Atlas connection active
+    if (cachedMongoose && cachedMongoose.conn) {
+      try {
+        await UserModel.create({
+          email: newUser.email,
+          passwordHash: newUser.passwordHash,
+          role: newUser.role,
+          name: newUser.name,
+          phoneOrId: newUser.phoneOrId,
+          avatarUrl: newUser.avatarUrl,
+          isVerified: newUser.isVerified,
+          isApproved: newUser.isApproved,
+          status: newUser.status,
+          verificationToken: newUser.verificationToken,
+          verificationExpires: newUser.verificationExpires,
+          registeredAt: newUser.registeredAt
+        });
+      } catch (dbErr) {
+        console.warn('Mongoose save warning:', dbErr.message);
+      }
+    }
+
+    await logActivity('New User Registration', newUser, newUser.name, `Registered as ${selectedRole}. Pending email confirmation and Principal approval.`);
+
+    // 8. Dispatch Email via Resend
+    const emailResult = await sendVerificationEmail({
+      to: newUser.email,
+      name: newUser.name,
+      token: verificationToken,
+      role: selectedRole,
+      req
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Registration submitted successfully! Please check your email to verify your address.',
+      data: {
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role,
+        isVerified: false,
+        isApproved: false,
+        status: newUser.status,
+        emailSent: emailResult.sent,
+        previewVerificationUrl: emailResult.verifyUrl
+      }
+    });
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ success: false, message: 'Server error during registration: ' + err.message });
+  }
+});
+
+// Web Email Verification Route
+app.get('/verify-email', async (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    return res.send(renderVerificationResultPage({
+      success: false,
+      title: 'Missing Verification Token',
+      message: 'No verification token was provided. Please use the link sent to your registered email address.'
+    }));
+  }
+
+  const user = memStore.users.find(u => u.verificationToken === token);
+  if (!user) {
+    return res.send(renderVerificationResultPage({
+      success: false,
+      title: 'Invalid or Expired Link',
+      message: 'This email verification link is invalid, expired, or has already been used. If your email was already confirmed, your account is awaiting Principal review.'
+    }));
+  }
+
+  if (user.verificationExpires && new Date() > new Date(user.verificationExpires)) {
+    return res.send(renderVerificationResultPage({
+      success: false,
+      title: 'Verification Link Expired',
+      message: 'This email confirmation link has expired (tokens are valid for 24 hours). Please contact administration.'
+    }));
+  }
+
+  // Update User Status
+  user.isVerified = true;
+  user.status = 'pending_approval';
+  user.verificationToken = null;
+  user.emailVerifiedAt = new Date();
+
+  if (cachedMongoose && cachedMongoose.conn) {
+    try {
+      await UserModel.updateOne(
+        { email: user.email },
+        { isVerified: true, status: 'pending_approval', verificationToken: null }
+      );
+    } catch (_) {}
+  }
+
+  await logActivity('Email Verified', user, user.name, `Confirmed email ${user.email}. Now pending Principal review.`);
+
+  return res.send(renderVerificationResultPage({
+    success: true,
+    title: 'Email Confirmed Successfully!',
+    userName: user.name,
+    userRole: user.role,
+    userEmail: user.email,
+    message: "Thank you for confirming your email address. Because St. Mary's College Negombo enforces strict student and faculty safety standards, Rev. Fr. Principal Ranjith will inspect your uploaded verification photograph before granting full LMS portal access."
+  }));
+});
+
+// JSON API for Email Verification
+app.get('/api/auth/verify-email', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ success: false, message: 'Token required' });
+  const user = memStore.users.find(u => u.verificationToken === token);
+  if (!user) return res.status(400).json({ success: false, message: 'Invalid or expired token' });
+  user.isVerified = true;
+  user.status = 'pending_approval';
+  user.verificationToken = null;
+  res.json({
+    success: true,
+    message: 'Email verified. Account pending Principal approval.',
+    user: { email: user.email, name: user.name, role: user.role, status: user.status }
+  });
+});
+
+// Check Registration Status Endpoint
+app.get('/api/auth/registration-status', (req, res) => {
+  const email = (req.query.email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ success: false, message: 'Email query parameter is required' });
+  const user = memStore.users.find(u => u.email.toLowerCase() === email);
+  if (!user) return res.status(404).json({ success: false, message: 'No registered user found with this email' });
+  res.json({
+    success: true,
+    data: {
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      isVerified: user.isVerified,
+      isApproved: user.isApproved,
+      status: user.status,
+      avatarUrl: user.avatarUrl,
+      rejectionReason: user.rejectionReason || null
+    }
+  });
+});
+
+// Resend Verification Email Endpoint
+app.post('/api/auth/resend-verification', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+  const normalized = email.trim().toLowerCase();
+  const user = memStore.users.find(u => u.email.toLowerCase() === normalized);
+  if (!user) return res.status(404).json({ success: false, message: 'Account not found' });
+  if (user.isVerified) {
+    return res.status(400).json({ success: false, message: 'This email is already verified. Account is pending Principal approval.' });
+  }
+
+  user.verificationToken = crypto.randomBytes(32).toString('hex');
+  user.verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  const emailResult = await sendVerificationEmail({
+    to: user.email,
+    name: user.name,
+    token: user.verificationToken,
+    role: user.role,
+    req
+  });
+
+  res.json({
+    success: true,
+    message: `Verification link sent to ${user.email}`,
+    emailSent: emailResult.sent,
+    previewVerificationUrl: emailResult.verifyUrl
+  });
+});
+
+// Public Contact Us Form API
+app.post('/api/contact', async (req, res) => {
+  try {
+    const { fullName, email, message } = req.body;
+    if (!fullName || !email || !message) {
+      return res.status(400).json({ success: false, message: 'Please provide full name, email address, and message content.' });
+    }
+    const savedMsg = await store.createContactMessage({
+      fullName: String(fullName).trim(),
+      email: String(email).trim(),
+      message: String(message).trim()
+    });
+    await logActivity('Submitted Contact Form', null, fullName, `Forwarded to Rev. Fr. Principal Ranjith: ${message.trim().substring(0, 50)}...`);
+    res.status(201).json({
+      success: true,
+      message: 'Your message has been sent directly to Rev. Fr. Principal Ranjith.',
+      data: savedMsg
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to send message: ' + err.message });
   }
 });
 
@@ -1404,6 +2065,11 @@ app.get('/login', (req, res) => {
   res.send(renderLoginPage(req.user));
 });
 
+// 2b. User Registration Page (Student vs Teacher Onboarding)
+app.get('/register', (req, res) => {
+  res.send(renderRegisterPage(req.user));
+});
+
 // 3. Student Dashboard
 app.get('/student/dashboard', requireAuth(['student', 'principal']), (req, res) => {
   res.send(renderStudentDashboard(req.user));
@@ -1434,13 +2100,42 @@ app.use((req, res) => {
 const CLAY_BASE_STYLES = `
   <script>
     (function() {
+      // 1. Suppress external Chrome Extension errors (e.g. extension request interceptors)
       try {
-        var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
-        if (!nativeFetch && window.Window && window.Window.prototype && window.Window.prototype.fetch) {
-          nativeFetch = window.Window.prototype.fetch.bind(window);
+        window.addEventListener('error', function(event) {
+          if (event) {
+            var msg = (event.message || '') + '';
+            var fn = (event.filename || '') + '';
+            if (fn.indexOf('chrome-extension://') !== -1 || (msg.indexOf('fetch') !== -1 && msg.indexOf('getter') !== -1)) {
+              if (typeof event.preventDefault === 'function') event.preventDefault();
+              if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+              if (typeof event.stopPropagation === 'function') event.stopPropagation();
+              return true;
+            }
+          }
+        }, true);
+
+        var _prevOnError = window.onerror;
+        window.onerror = function(msg, url, line, col, err) {
+          var u = (url || '') + '';
+          var m = (msg || '') + '';
+          if (u.indexOf('chrome-extension://') !== -1 || (m.indexOf('fetch') !== -1 && m.indexOf('getter') !== -1)) {
+            return true;
+          }
+          if (typeof _prevOnError === 'function') {
+            return _prevOnError.apply(this, arguments);
+          }
+        };
+      } catch (_) {}
+
+      // 2. Safe Fetch with both GETTER and SETTER so extensions/scripts assigning window.fetch succeed without 'has only a getter' errors
+      try {
+        var _nativeFetch = window.fetch;
+        if (!_nativeFetch && typeof Window !== 'undefined' && Window.prototype && Window.prototype.fetch) {
+          _nativeFetch = Window.prototype.fetch;
         }
 
-        function safeFetch(url, options) {
+        var safeFetch = function(url, options) {
           options = options || {};
           var token = null;
           try {
@@ -1463,27 +2158,32 @@ const CLAY_BASE_STYLES = `
             }
           }
           options.credentials = options.credentials || 'include';
-          if (nativeFetch) {
-            return nativeFetch(url, options);
+          if (typeof _nativeFetch === 'function') {
+            return _nativeFetch.call(window, url, options);
           }
           return Promise.reject(new Error('Fetch API unavailable'));
-        }
+        };
 
-        Object.defineProperty(window, 'fetch', {
-          value: safeFetch,
-          writable: true,
+        var fetchDescriptor = {
+          get: function() {
+            return safeFetch;
+          },
+          set: function(fn) {
+            _nativeFetch = fn;
+          },
           configurable: true,
           enumerable: true
-        });
+        };
 
-        if (window.Window && window.Window.prototype) {
+        try {
+          Object.defineProperty(window, 'fetch', fetchDescriptor);
+        } catch (_) {
+          try { window.fetch = safeFetch; } catch (__) {}
+        }
+
+        if (typeof Window !== 'undefined' && Window.prototype) {
           try {
-            Object.defineProperty(window.Window.prototype, 'fetch', {
-              value: safeFetch,
-              writable: true,
-              configurable: true,
-              enumerable: true
-            });
+            Object.defineProperty(Window.prototype, 'fetch', fetchDescriptor);
           } catch (_) {}
         }
       } catch (e) {}
@@ -1495,20 +2195,21 @@ const CLAY_BASE_STYLES = `
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
     :root {
-      --primary-blue: #4F7DF3;
-      --royal-blue: #3159C9;
-      --sky-blue: #A9D8FF;
-      --light-bg: #F3F6FF;
-      --purple: #9475E8;
-      --pink: #F5A5C5;
-      --yellow: #FFD66B;
-      --green: #70D6A3;
-      --dark-text: #26324B;
-      --secondary-text: #75819A;
+      --primary-blue: #1C3D80;
+      --royal-blue: #0F2A66;
+      --sky-blue: #A9C2F4;
+      --light-bg: #F4F7FC;
+      --purple: #7C4DFF;
+      --pink: #E91E63;
+      --yellow: #F59E0B;
+      --gold: #D97706;
+      --green: #10B981;
+      --dark-text: #1E293B;
+      --secondary-text: #64748B;
       --clay-surface: #FFFFFF;
-      --clay-shadow-out: 8px 8px 18px rgba(163, 177, 198, 0.4), -8px -8px 18px rgba(255, 255, 255, 0.9);
-      --clay-shadow-out-sm: 4px 4px 10px rgba(163, 177, 198, 0.35), -4px -4px 10px rgba(255, 255, 255, 0.9);
-      --clay-shadow-in: inset 3px 3px 6px rgba(163, 177, 198, 0.3), inset -3px -3px 6px rgba(255, 255, 255, 0.8);
+      --clay-shadow-out: 8px 8px 18px rgba(28, 61, 128, 0.12), -8px -8px 18px rgba(255, 255, 255, 0.9);
+      --clay-shadow-out-sm: 4px 4px 10px rgba(28, 61, 128, 0.1), -4px -4px 10px rgba(255, 255, 255, 0.9);
+      --clay-shadow-in: inset 3px 3px 6px rgba(28, 61, 128, 0.1), inset -3px -3px 6px rgba(255, 255, 255, 0.8);
       --clay-border: 1px solid rgba(255, 255, 255, 0.8);
     }
     * {
@@ -1526,9 +2227,9 @@ const CLAY_BASE_STYLES = `
     body {
       background-color: var(--light-bg);
       background-image: 
-        radial-gradient(circle at 10% 20%, rgba(169, 216, 255, 0.35) 0%, transparent 40%),
-        radial-gradient(circle at 90% 80%, rgba(245, 165, 197, 0.25) 0%, transparent 40%),
-        radial-gradient(circle at 50% 50%, rgba(148, 117, 232, 0.15) 0%, transparent 50%);
+        radial-gradient(circle at 10% 20%, rgba(28, 61, 128, 0.1) 0%, transparent 45%),
+        radial-gradient(circle at 90% 80%, rgba(245, 158, 11, 0.12) 0%, transparent 45%),
+        radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.8) 0%, transparent 60%);
       background-attachment: fixed;
       color: var(--dark-text);
       min-height: 100vh;
@@ -1915,8 +2616,8 @@ function renderLandingPage(currentUser) {
   <!-- Navigation -->
   <nav class="nav-bar">
     <div style="display:flex; align-items:center; gap:12px;">
-      <div style="width:42px; height:42px; border-radius:12px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); display:flex; align-items:center; justify-content:center; color:#FFD66B; font-size:1.2rem; box-shadow:var(--clay-shadow-out-sm); flex-shrink:0;">
-        <i class="fa-solid fa-graduation-cap"></i>
+      <div style="width:48px; height:48px; border-radius:12px; background:#FFFFFF; display:flex; align-items:center; justify-content:center; padding:2px; box-shadow:var(--clay-shadow-out-sm); flex-shrink:0; overflow:hidden;">
+        <img src="/assets/aistudio/image_da1f9c36.png" alt="St. Mary's College Crest" style="width:100%; height:100%; object-fit:contain; border-radius:10px;" />
       </div>
       <div>
         <div style="font-family:'Poppins'; font-weight:800; color:var(--royal-blue); font-size:clamp(1rem, 3.5vw, 1.15rem); line-height:1.1;">St. Mary's College</div>
@@ -1932,14 +2633,17 @@ function renderLandingPage(currentUser) {
     </ul>
 
     <div style="display:flex; align-items:center; gap:10px;">
-      <div id="auth-nav-container" class="desktop-auth-btn">
+      <div id="auth-nav-container" class="desktop-auth-btn" style="display:flex; align-items:center; gap:8px;">
         ${currentUser ? `
           <a href="${currentUser.role === 'principal' ? '/admin' : currentUser.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard'}" class="clay-btn">
             <i class="fa-solid fa-gauge"></i> Enter Dashboard (${currentUser.role})
           </a>
         ` : `
-          <a href="/login" class="clay-btn">
-            <i class="fa-solid fa-right-to-bracket"></i> Learning Portal Login
+          <a href="/register" class="clay-btn clay-btn-secondary" style="font-size:0.9rem;">
+            <i class="fa-solid fa-user-plus"></i> Register
+          </a>
+          <a href="/login" class="clay-btn" style="font-size:0.9rem;">
+            <i class="fa-solid fa-right-to-bracket"></i> Sign In
           </a>
         `}
       </div>
@@ -1955,7 +2659,8 @@ function renderLandingPage(currentUser) {
     <a href="#features" onclick="toggleLandingNav()"><i class="fa-solid fa-shapes" style="margin-right:8px; color:#28A745;"></i> LMS Features</a>
     <a href="#announcements" onclick="toggleLandingNav()"><i class="fa-solid fa-bullhorn" style="margin-right:8px; color:#E83E8C;"></i> Announcements</a>
     <a href="#contact" onclick="toggleLandingNav()"><i class="fa-solid fa-envelope" style="margin-right:8px; color:var(--purple);"></i> Contact Information</a>
-    <div style="padding-top:10px; border-top:1px solid #EDF2F9; margin-top:6px;">
+    <div style="padding-top:10px; border-top:1px solid #EDF2F9; margin-top:6px; display:flex; flex-direction:column; gap:8px;">
+      <a href="/register" class="clay-btn clay-btn-secondary" style="width:100%; justify-content:center;"><i class="fa-solid fa-user-plus"></i> Register as Student or Teacher</a>
       <a href="/login" class="clay-btn" style="width:100%; justify-content:center;"><i class="fa-solid fa-right-to-bracket"></i> Portal Sign In</a>
     </div>
   </div>
@@ -1966,31 +2671,97 @@ function renderLandingPage(currentUser) {
       <span class="clay-badge badge-blue" style="margin-bottom:16px;"><i class="fa-solid fa-star"></i> Empowering Generations Since 1871</span>
       <h1>Welcome to St. Mary's College Negombo</h1>
       <h2>Empowering Students. Inspiring Excellence. Building Tomorrow.</h2>
-      <p>Your digital learning destination — seamlessly connecting students, teachers, and school administration in one innovative, interactive Claymorphism platform.</p>
+      <p>Your digital learning destination, connecting students, teachers, and school administration in one simple, easy-to-use platform.</p>
       <div class="hero-buttons">
         <a href="/login?role=student" class="clay-btn"><i class="fa-solid fa-user-graduate"></i> Student Portal</a>
         <a href="/login?role=teacher" class="clay-btn clay-btn-secondary"><i class="fa-solid fa-chalkboard-user"></i> Faculty Portal</a>
+        <a href="/register" class="clay-btn clay-btn-success"><i class="fa-solid fa-user-plus"></i> Register (Student / Teacher)</a>
         <a href="/login?role=principal" class="clay-btn clay-btn-secondary"><i class="fa-solid fa-shield-halved"></i> Principal Admin</a>
       </div>
     </div>
 
     <div>
       <div class="clay-card hero-card">
-        <div style="width:90px; height:90px; border-radius:50%; background:linear-gradient(135deg, #FFD66B, #F39C12); margin:0 auto 16px; display:flex; align-items:center; justify-content:center; font-size:2.5rem; color:white; box-shadow:var(--clay-shadow-out);">
+        <div style="width:90px; height:90px; border-radius:50%; background:linear-gradient(135deg, #F59E0B, #D97706); margin:0 auto 16px; display:flex; align-items:center; justify-content:center; font-size:2.5rem; color:white; box-shadow:var(--clay-shadow-out);">
           <i class="fa-solid fa-award"></i>
         </div>
         <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:8px;">Excellence in Academics</h3>
         <p style="color:var(--secondary-text); font-size:0.92rem; margin-bottom:18px;">Ranked among premier institutions in Western Province, Sri Lanka.</p>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:10px;">
           <div class="clay-card-flat" style="padding:12px;">
-            <div style="font-family:'Poppins'; font-size:1.5rem; font-weight:800; color:var(--royal-blue);">98.4%</div>
+            <div style="font-family:'Poppins'; font-size:1.5rem; font-weight:800; color:var(--royal-blue);">82.4%</div>
             <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:700;">GCE O/L Pass Rate</div>
           </div>
           <div class="clay-card-flat" style="padding:12px;">
-            <div style="font-family:'Poppins'; font-size:1.5rem; font-weight:800; color:#28A745;">100%</div>
+            <div style="font-family:'Poppins'; font-size:1.5rem; font-weight:800; color:#10B981;">100%</div>
             <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:700;">Digital Curriculum</div>
           </div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Core Values & Pillars Section (Non-Photo Showcase) -->
+  <section id="gallery" class="section-wrap">
+    <div class="section-head">
+      <span class="clay-badge badge-yellow"><i class="fa-solid fa-compass"></i> Core Values & Pillars</span>
+      <h2>The Marian Pillars of Excellence</h2>
+      <p style="color:var(--secondary-text); margin-top:8px;">Rooted in faith, discipline, and intellectual inquiry since 1871</p>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:22px;">
+      <div class="clay-card" style="padding:28px; text-align:left; border-top:4px solid var(--royal-blue);">
+        <div style="width:54px; height:54px; border-radius:16px; background:rgba(28, 61, 128, 0.1); color:var(--royal-blue); display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin-bottom:18px;">
+          <i class="fa-solid fa-book-bible"></i>
+        </div>
+        <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:800; text-transform:uppercase; margin-bottom:6px;">Foundation</div>
+        <h3 style="font-family:'Poppins'; font-size:1.2rem; color:var(--royal-blue); margin-bottom:10px;">Moral & Spiritual Upbringing</h3>
+        <p style="color:var(--secondary-text); font-size:0.9rem; line-height:1.6;">Guided by the motto 'Viam Sapientiae Monstrabo Tibi' (I will show you the way of wisdom), fostering integrity, empathy, and spiritual resilience in every Marian.</p>
+      </div>
+
+      <div class="clay-card" style="padding:28px; text-align:left; border-top:4px solid #10B981;">
+        <div style="width:54px; height:54px; border-radius:16px; background:rgba(16, 185, 129, 0.1); color:#10B981; display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin-bottom:18px;">
+          <i class="fa-solid fa-graduation-cap"></i>
+        </div>
+        <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:800; text-transform:uppercase; margin-bottom:6px;">Academics</div>
+        <h3 style="font-family:'Poppins'; font-size:1.2rem; color:var(--royal-blue); margin-bottom:10px;">Rigorous Intellectual Inquiry</h3>
+        <p style="color:var(--secondary-text); font-size:0.9rem; line-height:1.6;">Comprehensive bilingual curricula spanning science, mathematics, commerce, and technology, preparing students for national and global leadership.</p>
+      </div>
+
+      <div class="clay-card" style="padding:28px; text-align:left; border-top:4px solid #F59E0B;">
+        <div style="width:54px; height:54px; border-radius:16px; background:rgba(245, 158, 11, 0.1); color:#F59E0B; display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin-bottom:18px;">
+          <i class="fa-solid fa-medal"></i>
+        </div>
+        <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:800; text-transform:uppercase; margin-bottom:6px;">Character</div>
+        <h3 style="font-family:'Poppins'; font-size:1.2rem; color:var(--royal-blue); margin-bottom:10px;">Discipline & Sportsmanship</h3>
+        <p style="color:var(--secondary-text); font-size:0.9rem; line-height:1.6;">Cultivating teamwork, resilience, and leadership through competitive athletics, inter-house championships, and vibrant student societies.</p>
+      </div>
+
+      <div class="clay-card" style="padding:28px; text-align:left; border-top:4px solid #7C4DFF;">
+        <div style="width:54px; height:54px; border-radius:16px; background:rgba(124, 77, 255, 0.1); color:#7C4DFF; display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin-bottom:18px;">
+          <i class="fa-solid fa-laptop-code"></i>
+        </div>
+        <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:800; text-transform:uppercase; margin-bottom:6px;">Innovation</div>
+        <h3 style="font-family:'Poppins'; font-size:1.2rem; color:var(--royal-blue); margin-bottom:10px;">Modern Digital Literacy</h3>
+        <p style="color:var(--secondary-text); font-size:0.9rem; line-height:1.6;">Equipping Marian learners with 21st-century technological fluency through our dedicated cloud LMS, STEM laboratories, and interactive online coursework.</p>
+      </div>
+
+      <div class="clay-card" style="padding:28px; text-align:left; border-top:4px solid #E91E63;">
+        <div style="width:54px; height:54px; border-radius:16px; background:rgba(233, 30, 99, 0.1); color:#E91E63; display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin-bottom:18px;">
+          <i class="fa-solid fa-hands-holding-child"></i>
+        </div>
+        <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:800; text-transform:uppercase; margin-bottom:6px;">Community</div>
+        <h3 style="font-family:'Poppins'; font-size:1.2rem; color:var(--royal-blue); margin-bottom:10px;">Brotherhood & Social Service</h3>
+        <p style="color:var(--secondary-text); font-size:0.9rem; line-height:1.6;">Fostering lifelong fraternal bonds among students, teachers, parents, and our esteemed alumni network across Sri Lanka and worldwide.</p>
+      </div>
+
+      <div class="clay-card" style="padding:28px; text-align:left; border-top:4px solid #0284C7;">
+        <div style="width:54px; height:54px; border-radius:16px; background:rgba(2, 132, 199, 0.1); color:#0284C7; display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin-bottom:18px;">
+          <i class="fa-solid fa-globe"></i>
+        </div>
+        <div style="font-size:0.75rem; color:var(--secondary-text); font-weight:800; text-transform:uppercase; margin-bottom:6px;">Heritage</div>
+        <h3 style="font-family:'Poppins'; font-size:1.2rem; color:var(--royal-blue); margin-bottom:10px;">Legacy of Negombo</h3>
+        <p style="color:var(--secondary-text); font-size:0.9rem; line-height:1.6;">Standing proudly as a coastal landmark since 1871, shaping generations of leaders in education, science, governance, and the arts.</p>
       </div>
     </div>
   </section>
@@ -2002,22 +2773,22 @@ function renderLandingPage(currentUser) {
         <span class="clay-badge badge-yellow">History & Heritage</span>
         <h2 style="font-family:'Poppins'; font-size:clamp(1.5rem, 3.5vw, 2rem); color:var(--royal-blue); margin:12px 0 16px;">155+ Years of Educational Leadership</h2>
         <p style="color:var(--dark-text); line-height:1.7; margin-bottom:14px;">Located in the historic coastal city of Negombo, St. Mary's College has stood as a beacon of moral education, academic vigor, sportsmanship, and civic pride for over a century and a half.</p>
-        <p style="color:var(--secondary-text); line-height:1.7;">Our cutting-edge Learning Management System carries this legacy into the modern era, equipping our 3,000+ students with 24/7 access to multimedia study resources, interactive examinations, and personalized academic feedback.</p>
+        <p style="color:var(--secondary-text); line-height:1.7;">Our cutting-edge Learning Management System carries this legacy into the modern era, equipping our 1,200+ students with 24/7 access to multimedia study resources, interactive examinations, and personalized academic feedback.</p>
       </div>
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:14px;">
         <div class="clay-card-flat" style="padding:18px; text-align:center;">
           <i class="fa-solid fa-users" style="font-size:1.8rem; color:var(--royal-blue); margin-bottom:8px;"></i>
-          <h4 style="font-size:1.2rem; font-weight:800;">3,000+</h4>
+          <h4 style="font-size:1.2rem; font-weight:800;">1,200+</h4>
           <p style="font-size:0.8rem; color:var(--secondary-text);">Active Marian Students</p>
         </div>
         <div class="clay-card-flat" style="padding:18px; text-align:center;">
-          <i class="fa-solid fa-chalkboard-user" style="font-size:1.8rem; color:#28A745; margin-bottom:8px;"></i>
-          <h4 style="font-size:1.2rem; font-weight:800;">120+</h4>
+          <i class="fa-solid fa-chalkboard-user" style="font-size:1.8rem; color:#10B981; margin-bottom:8px;"></i>
+          <h4 style="font-size:1.2rem; font-weight:800;">60+</h4>
           <p style="font-size:0.8rem; color:var(--secondary-text);">Dedicated Faculty</p>
         </div>
         <div class="clay-card-flat" style="padding:18px; text-align:center;">
-          <i class="fa-solid fa-trophy" style="font-size:1.8rem; color:#F39C12; margin-bottom:8px;"></i>
-          <h4 style="font-size:1.2rem; font-weight:800;">50+</h4>
+          <i class="fa-solid fa-trophy" style="font-size:1.8rem; color:#F59E0B; margin-bottom:8px;"></i>
+          <h4 style="font-size:1.2rem; font-weight:800;">10+</h4>
           <p style="font-size:0.8rem; color:var(--secondary-text);">Sports & Clubs</p>
         </div>
         <div class="clay-card-flat" style="padding:18px; text-align:center;">
@@ -2027,7 +2798,7 @@ function renderLandingPage(currentUser) {
         </div>
       </div>
     </div>
-
+  </section>
 
   <!-- Features Section -->
   <section id="features" class="section-wrap">
@@ -2069,49 +2840,139 @@ function renderLandingPage(currentUser) {
     </div>
 
     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:20px;">
-      ${memStore.announcements.slice(0, 3).map(a => `
-        <div class="clay-card" style="padding:24px;">
-          <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
-            <span class="clay-badge badge-blue">${a.category}</span>
-            <span style="font-size:0.8rem; color:var(--secondary-text);">${new Date(a.publishedDate).toLocaleDateString()}</span>
+      ${memStore.announcements.slice(0, 3).map(a => {
+        const dateObj = new Date(a.publishedDate);
+        const dd = String(dateObj.getDate()).padStart(2, '0');
+        const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const yyyy = dateObj.getFullYear();
+        const slDate = `${dd}/${mm}/${yyyy}`;
+
+        return `
+          <div class="clay-card" style="padding:24px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
+              <span class="clay-badge badge-blue">${a.category}</span>
+              <span style="font-size:0.85rem; font-weight:700; color:var(--royal-blue);"><i class="fa-solid fa-calendar-day"></i> ${slDate}</span>
+            </div>
+            <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:10px;">${a.title}</h3>
+            <p style="color:var(--dark-text); font-size:0.92rem; line-height:1.5;">${a.content}</p>
           </div>
-          <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:10px;">${a.title}</h3>
-          <p style="color:var(--dark-text); font-size:0.92rem; line-height:1.5;">${a.content}</p>
-        </div>
-      `).join('')}
+        `;
+      }).join('')}
     </div>
   </section>
 
-  <!-- Contact & Footer -->
+  <!-- Contact Form & Footer -->
   <footer id="contact">
-    <div style="max-width:1300px; margin:0 auto; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:30px;">
+    <div style="max-width:1300px; margin:0 auto; display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:36px; margin-bottom:40px;">
       <div>
         <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:12px;">St. Mary's College Negombo</h3>
-        <p style="color:var(--secondary-text); font-size:0.92rem; line-height:1.6;">A premier Sri Lankan Catholic collegiate institution fostering academic brilliance and moral excellence.</p>
+        <p style="color:var(--secondary-text); font-size:0.92rem; line-height:1.6; margin-bottom:16px;">A premier Sri Lankan Catholic collegiate institution fostering academic brilliance and moral excellence.</p>
+        <div style="background:#F6F9FF; border-radius:18px; padding:18px; border:1px solid rgba(169, 216, 255, 0.3);">
+          <h4 style="font-family:'Poppins'; color:var(--dark-text); margin-bottom:12px; font-size:1rem;">Contact Information</h4>
+          <p style="color:var(--dark-text); font-size:0.92rem; margin-bottom:8px; display:flex; align-items:center; gap:10px;"><i class="fa-solid fa-location-dot" style="color:var(--royal-blue); width:20px; font-size:1.1rem;"></i> Negombo, Western Province, Sri Lanka</p>
+          <p style="color:var(--dark-text); font-size:0.92rem; margin-bottom:8px; display:flex; align-items:center; gap:10px;"><i class="fa-solid fa-phone" style="color:var(--royal-blue); width:20px; font-size:1.1rem;"></i> <strong>0312 222 594</strong></p>
+          <p style="color:var(--dark-text); font-size:0.92rem; display:flex; align-items:center; gap:10px;"><i class="fa-solid fa-envelope" style="color:var(--royal-blue); width:20px; font-size:1.1rem;"></i> <strong>smcnegombomediaunit@gmail.com</strong></p>
+        </div>
       </div>
-      <div>
-        <h4 style="font-family:'Poppins'; color:var(--dark-text); margin-bottom:12px;">Contact Information</h4>
-        <p style="color:var(--secondary-text); font-size:0.92rem; margin-bottom:6px;"><i class="fa-solid fa-location-dot" style="color:var(--royal-blue); width:20px;"></i> Negombo, Western Province, Sri Lanka</p>
-        <p style="color:var(--secondary-text); font-size:0.92rem; margin-bottom:6px;"><i class="fa-solid fa-phone" style="color:var(--royal-blue); width:20px;"></i> +94 31 555 0123</p>
-        <p style="color:var(--secondary-text); font-size:0.92rem;"><i class="fa-solid fa-envelope" style="color:var(--royal-blue); width:20px;"></i> info@stmarysnegombo.example</p>
-      </div>
-      <div>
-        <h4 style="font-family:'Poppins'; color:var(--dark-text); margin-bottom:12px;">Demo Login Credentials</h4>
-        <p style="color:var(--secondary-text); font-size:0.85rem; margin-bottom:4px;"><strong>Principal:</strong> principal@stmarys.lk (Principal@123)</p>
-        <p style="color:var(--secondary-text); font-size:0.85rem; margin-bottom:4px;"><strong>Teacher:</strong> perera@stmarys.lk (Teacher@123)</p>
-        <p style="color:var(--secondary-text); font-size:0.85rem;"><strong>Student:</strong> alex@stmarys.lk (Student@123)</p>
+
+      <div style="grid-column: span 2;">
+        <div class="clay-card" style="padding:28px;">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+            <div style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); display:flex; align-items:center; justify-content:center; color:white; font-size:1.2rem;">
+              <i class="fa-solid fa-paper-plane"></i>
+            </div>
+            <div>
+              <h3 style="font-family:'Poppins'; color:var(--royal-blue); margin:0;">Contact Administration</h3>
+              <p style="color:var(--secondary-text); font-size:0.85rem; margin:0;">Inquiries submitted here are forwarded directly to Rev. Fr. Principal Ranjith's dashboard.</p>
+            </div>
+          </div>
+
+          <form id="contact-us-form" onsubmit="handleContactSubmit(event)">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.88rem; margin-bottom:6px; color:var(--dark-text);">Full Name *</label>
+                <input type="text" id="contact-name" class="clay-input" required placeholder="e.g. Gamini Fernando">
+              </div>
+              <div>
+                <label style="display:block; font-weight:700; font-size:0.88rem; margin-bottom:6px; color:var(--dark-text);">Email Address *</label>
+                <input type="email" id="contact-email" class="clay-input" required placeholder="e.g. gamini.f@gmail.com">
+              </div>
+            </div>
+            <div style="margin-bottom:18px;">
+              <label style="display:block; font-weight:700; font-size:0.88rem; margin-bottom:6px; color:var(--dark-text);">Your Message to Principal *</label>
+              <textarea id="contact-message" class="clay-input" rows="4" required style="resize:vertical;" placeholder="Write your inquiry or message to Rev. Fr. Principal Ranjith here..."></textarea>
+            </div>
+            <button type="submit" class="clay-btn" id="contact-submit-btn" style="padding:12px 24px;">
+              <i class="fa-solid fa-paper-plane"></i> Send Message to Principal
+            </button>
+          </form>
+        </div>
       </div>
     </div>
+
     <div style="text-align:center; margin-top:30px; padding-top:20px; border-top:1px solid #EDF2F9; color:var(--secondary-text); font-size:0.85rem;">
       &copy; 2026 St. Mary's College Negombo. All rights reserved.
     </div>
   </footer>
+
+  <div id="landing-toast-container" style="position:fixed; bottom:20px; right:20px; z-index:2000;"></div>
 
   <script>
     function toggleLandingNav() {
       var menu = document.getElementById('landing-mobile-nav');
       if (menu) menu.classList.toggle('open');
     }
+
+    async function handleContactSubmit(e) {
+      e.preventDefault();
+      var btn = document.getElementById('contact-submit-btn');
+      var name = document.getElementById('contact-name').value;
+      var email = document.getElementById('contact-email').value;
+      var message = document.getElementById('contact-message').value;
+
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Forwarding Message...';
+
+      try {
+        var res = await fetch('/api/contact', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fullName: name, email: email, message: message })
+        });
+        var json = await res.json();
+        if (json.success) {
+          showLandingToast('success', 'Your message was sent directly to Rev. Fr. Principal Ranjith.');
+          document.getElementById('contact-us-form').reset();
+        } else {
+          showLandingToast('error', json.message || 'Failed to submit message.');
+        }
+      } catch (err) {
+        showLandingToast('error', 'Error submitting message: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Send Message to Principal';
+      }
+    }
+
+    function showLandingToast(type, msg) {
+      var container = document.getElementById('landing-toast-container');
+      var toast = document.createElement('div');
+      toast.className = 'clay-card';
+      toast.style.padding = '14px 20px';
+      toast.style.borderRadius = '16px';
+      toast.style.background = type === 'success' ? '#28A745' : '#E83E8C';
+      toast.style.color = 'white';
+      toast.style.fontWeight = '700';
+      toast.style.fontSize = '0.9rem';
+      toast.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)';
+      toast.style.marginBottom = '10px';
+      toast.innerHTML = (type === 'success' ? '✅ ' : '❌ ') + msg;
+      container.appendChild(toast);
+      setTimeout(function() {
+        toast.remove();
+      }, 4000);
+    }
+
     (function() {
       try {
         var token = localStorage.getItem('stmarys_token');
@@ -2281,13 +3142,13 @@ function renderLoginPage(currentUser) {
     <form id="login-form" onsubmit="handleLogin(event)">
       <div class="form-group">
         <label id="email-label">Student Email / ID</label>
-        <input type="text" class="clay-input" id="email-input" required placeholder="alex@stmarys.lk" value="alex@stmarys.lk">
+        <input type="text" class="clay-input" id="email-input" required placeholder="Enter your email or ID">
       </div>
 
       <div class="form-group">
         <label>Password</label>
         <div class="input-wrapper">
-          <input type="password" class="clay-input" id="password-input" required placeholder="••••••••" value="Student@123">
+          <input type="password" class="clay-input" id="password-input" required placeholder="••••••••">
           <i class="fa-solid fa-eye toggle-pass" onclick="togglePasswordVisibility()"></i>
         </div>
       </div>
@@ -2302,20 +3163,29 @@ function renderLoginPage(currentUser) {
       <button type="submit" class="clay-btn" style="width:100%; justify-content:center; padding:12px; font-size:1rem;" id="login-submit-btn">
         <i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In to LMS
       </button>
-    </form>
 
-    <!-- Quick Demo Login Switcher -->
-    <div class="demo-box">
-      <div style="font-size:0.8rem; font-weight:800; color:var(--royal-blue); margin-bottom:6px;"><i class="fa-solid fa-bolt"></i> Instant Demo Logins:</div>
-      <div style="display:flex; flex-wrap:wrap;">
-        <div class="demo-pill" onclick="quickFill('student')">👨‍🎓 Student: Alex (STU-001)</div>
-        <div class="demo-pill" onclick="quickFill('teacher')">👨‍🏫 Teacher: Mr. Perera</div>
-        <div class="demo-pill" onclick="quickFill('principal')">👑 Principal: Fr. Ranjith</div>
+      <!-- New Registration Link -->
+      <div style="text-align:center; margin-top:18px; padding-top:16px; border-top:1px dashed rgba(169, 216, 255, 0.7);">
+        <p style="font-size:0.86rem; color:var(--secondary-text); margin-bottom:8px;">New Student or Faculty Member?</p>
+        <a href="/register" class="clay-btn clay-btn-secondary" style="width:100%; justify-content:center; font-size:0.9rem;">
+          <i class="fa-solid fa-user-plus"></i> Register as Student or Teacher
+        </a>
       </div>
-    </div>
+    </form>
 
     <div style="text-align:center; margin-top:20px;">
       <a href="/" style="color:var(--secondary-text); font-size:0.85rem; text-decoration:none; font-weight:700;"><i class="fa-solid fa-arrow-left"></i> Return to Homepage</a>
+    </div>
+  </div>
+
+  <!-- Account Status Alert Modal -->
+  <div class="modal-backdrop" id="auth-status-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(38, 50, 75, 0.6); z-index:2500; align-items:center; justify-content:center; padding:16px;">
+    <div class="clay-card" style="max-width:480px; width:100%; padding:28px; background:white; text-align:center;">
+      <div id="auth-modal-icon" style="width:68px; height:68px; border-radius:50%; margin:0 auto 16px; display:flex; align-items:center; justify-content:center; font-size:2rem; box-shadow:var(--clay-shadow-out-sm);"></div>
+      <h3 id="auth-modal-title" style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:10px; font-size:1.3rem;"></h3>
+      <p id="auth-modal-message" style="color:var(--dark-text); font-size:0.92rem; line-height:1.6; margin-bottom:20px;"></p>
+      <div id="auth-modal-action-box" style="margin-bottom:16px;"></div>
+      <button type="button" class="clay-btn clay-btn-secondary" style="width:100%; justify-content:center;" onclick="closeModal('auth-status-modal')">Understood</button>
     </div>
   </div>
 
@@ -2331,26 +3201,46 @@ function renderLoginPage(currentUser) {
 
       if (role === 'student') {
         document.getElementById('email-label').innerText = 'Student Email / ID';
-        document.getElementById('email-input').value = 'alex@stmarys.lk';
-        document.getElementById('password-input').value = 'Student@123';
+        document.getElementById('email-input').placeholder = 'Enter student email or ID';
       } else if (role === 'teacher') {
         document.getElementById('email-label').innerText = 'Teacher Email';
-        document.getElementById('email-input').value = 'perera@stmarys.lk';
-        document.getElementById('password-input').value = 'Teacher@123';
+        document.getElementById('email-input').placeholder = 'Enter teacher email';
       } else if (role === 'principal') {
         document.getElementById('email-label').innerText = 'Principal Administrator Email';
-        document.getElementById('email-input').value = 'principal@stmarys.lk';
-        document.getElementById('password-input').value = 'Principal@123';
+        document.getElementById('email-input').placeholder = 'Enter principal email';
       }
-    }
-
-    function quickFill(role) {
-      selectRole(role);
     }
 
     function togglePasswordVisibility() {
       const p = document.getElementById('password-input');
       p.type = p.type === 'password' ? 'text' : 'password';
+    }
+
+    function showStatusModal(type, title, message, extraHtml) {
+      const m = document.getElementById('auth-status-modal');
+      const icon = document.getElementById('auth-modal-icon');
+      const t = document.getElementById('auth-modal-title');
+      const msg = document.getElementById('auth-modal-message');
+      const act = document.getElementById('auth-modal-action-box');
+
+      t.innerText = title;
+      msg.innerHTML = message;
+      act.innerHTML = extraHtml || '';
+
+      if (type === 'unverified') {
+        icon.style.background = '#FFF8E1';
+        icon.style.color = '#F39C12';
+        icon.innerHTML = '<i class="fa-solid fa-envelope-open-text"></i>';
+      } else if (type === 'pending') {
+        icon.style.background = '#E8F0FE';
+        icon.style.color = 'var(--royal-blue)';
+        icon.innerHTML = '<i class="fa-solid fa-user-clock"></i>';
+      } else {
+        icon.style.background = '#FDE8EF';
+        icon.style.color = '#E83E8C';
+        icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+      }
+      m.style.display = 'flex';
     }
 
     async function handleLogin(e) {
@@ -2381,14 +3271,58 @@ function renderLoginPage(currentUser) {
             window.location.href = json.data.redirectUrl + sep + 'token=' + encodeURIComponent(json.data.token);
           }, 200);
         } else {
-          showToast('error', json.message || 'Login failed');
           btn.disabled = false;
           btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In to LMS';
+
+          if (json.code === 'EMAIL_NOT_VERIFIED') {
+            showStatusModal(
+              'unverified',
+              'Email Verification Required',
+              'Please verify your email address (<strong>' + (json.email || email) + '</strong>) before signing in. Check your inbox or spam folder for the link sent via Resend.',
+              '<button class="clay-btn" style="width:100%; justify-content:center;" onclick="resendFromInput()"><i class="fa-solid fa-paper-plane"></i> Resend Verification Email</button>'
+            );
+          } else if (json.code === 'PENDING_APPROVAL') {
+            showStatusModal(
+              'pending',
+              'Account Pending Principal Approval',
+              'Your email is verified! However, your account is currently awaiting verification by <strong>Rev. Fr. Principal Ranjith</strong>. The Principal inspects your uploaded profile photo and school credentials prior to authorizing login.',
+              '<div style="font-size:0.8rem; color:var(--secondary-text); background:#F8FAFF; padding:10px; border-radius:12px; border:1px solid #E6EEFA;"><i class="fa-solid fa-shield"></i> St. Mary&#39;s College Student &amp; Faculty Security Protocol</div>'
+            );
+          } else if (json.code === 'ACCOUNT_REJECTED') {
+            showStatusModal('rejected', 'Application Declined', json.message);
+          } else {
+            showToast('error', json.message || 'Login failed');
+          }
         }
       } catch (err) {
         showToast('error', err.message);
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In to LMS';
+      }
+    }
+
+    function resendFromInput() {
+      const el = document.getElementById('email-input');
+      if (el && el.value) {
+        resendEmail(el.value.trim());
+      }
+    }
+
+    async function resendEmail(email) {
+      try {
+        const res = await fetch('/api/auth/resend-verification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const j = await res.json();
+        showToast(j.success ? 'success' : 'error', j.message);
+        if (j.previewVerificationUrl) {
+          const act = document.getElementById('auth-modal-action-box');
+          act.innerHTML += '<div style="margin-top:10px;"><a href="' + j.previewVerificationUrl + '" target="_blank" class="clay-btn clay-btn-success" style="width:100%; justify-content:center; font-size:0.85rem;"><i class="fa-solid fa-bolt"></i> Test Mode: Open Verification Link</a></div>';
+        }
+      } catch (e) {
+        showToast('error', e.message);
       }
     }
 
@@ -2413,6 +3347,11 @@ function renderLoginPage(currentUser) {
       setTimeout(() => t.remove(), 4000);
     }
 
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    }
+
     // Auto-select role from URL if present
     const urlParams = new URLSearchParams(window.location.search);
     const requestedRole = urlParams.get('role');
@@ -2420,6 +3359,612 @@ function renderLoginPage(currentUser) {
       selectRole(requestedRole);
     }
   </script>
+</body>
+</html>`;
+}
+
+// -------------------------------------------------------------
+// USER REGISTRATION PAGE RENDERER (Claymorphism UI)
+// -------------------------------------------------------------
+function renderRegisterPage(currentUser) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Account Registration | St. Mary's College Negombo LMS</title>
+  ${CLAY_BASE_STYLES}
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: clamp(16px, 4vw, 36px) 16px;
+    }
+    .register-card {
+      width: 100%;
+      max-width: 620px;
+      padding: clamp(24px, 5vw, 42px);
+      background: white;
+      border-radius: 28px;
+    }
+    .role-selection-box {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .role-option-card {
+      padding: 16px 12px;
+      border-radius: 18px;
+      background: #F8FAFF;
+      border: 2px solid transparent;
+      box-shadow: var(--clay-shadow-out-sm);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .role-option-card:hover {
+      transform: translateY(-2px);
+    }
+    .role-option-card.active {
+      border-color: var(--primary-blue);
+      background: #FFFFFF;
+      box-shadow: 0 8px 20px rgba(79, 125, 243, 0.25);
+    }
+    .role-option-card .icon-wrap {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      margin: 0 auto 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+    .role-option-card.student .icon-wrap { background: #E8F0FE; color: var(--royal-blue); }
+    .role-option-card.teacher .icon-wrap { background: #E6F8F0; color: #1E7E34; }
+    .role-option-card .title {
+      font-family: 'Poppins', sans-serif;
+      font-weight: 800;
+      font-size: 1rem;
+      color: var(--dark-text);
+    }
+    .role-option-card .desc {
+      font-size: 0.76rem;
+      color: var(--secondary-text);
+      margin-top: 2px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+    .form-group label {
+      display: block;
+      font-weight: 700;
+      font-size: 0.88rem;
+      margin-bottom: 6px;
+      color: var(--dark-text);
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 600px) {
+      .form-row { grid-template-columns: 1fr !important; }
+    }
+
+    /* Verification Notice Box */
+    .photo-notice-box {
+      background: #FFF8E1;
+      border: 1px solid #FFE082;
+      border-left: 5px solid #F39C12;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 0.82rem;
+      color: #7B5000;
+      line-height: 1.5;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .photo-notice-box i {
+      font-size: 1.2rem;
+      color: #F39C12;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    /* Avatar Upload Box */
+    .avatar-upload-container {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      background: #F8FAFF;
+      border: 2px dashed rgba(169, 216, 255, 0.8);
+      border-radius: 18px;
+      padding: 16px;
+      transition: all 0.2s ease;
+    }
+    .avatar-upload-container.has-file {
+      border-style: solid;
+      border-color: #70D6A3;
+      background: #F0FAF5;
+    }
+    .avatar-preview-circle {
+      width: 78px;
+      height: 78px;
+      border-radius: 50%;
+      background: #EDF2F9;
+      box-shadow: var(--clay-shadow-out-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 3px solid white;
+      color: var(--secondary-text);
+      font-size: 2rem;
+    }
+    .avatar-preview-circle img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .avatar-upload-actions {
+      flex: 1;
+    }
+    .sample-pill {
+      display: inline-block;
+      padding: 4px 10px;
+      background: white;
+      border-radius: 10px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--royal-blue);
+      cursor: pointer;
+      box-shadow: var(--clay-shadow-out-sm);
+      margin-top: 6px;
+      margin-right: 6px;
+      border: 1px solid rgba(169, 216, 255, 0.4);
+    }
+    .sample-pill:hover { background: #E8F0FE; }
+
+    /* Success Step Card */
+    #success-panel {
+      display: none;
+      text-align: center;
+      animation: fadeIn 0.3s ease;
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 14px;
+      font-weight: 800;
+      font-size: 0.82rem;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="clay-card register-card">
+    
+    <!-- Registration Header -->
+    <div style="text-align:center; margin-bottom:24px;">
+      <div style="width:58px; height:58px; border-radius:18px; background:linear-gradient(135deg, var(--royal-blue), var(--primary-blue)); margin:0 auto 12px; display:flex; align-items:center; justify-content:center; color:#FFD66B; font-size:1.8rem; box-shadow:var(--clay-shadow-out);">
+        <i class="fa-solid fa-graduation-cap"></i>
+      </div>
+      <h2 style="font-family:'Poppins'; color:var(--royal-blue); font-size:1.6rem;">St. Mary's College Negombo</h2>
+      <p style="color:var(--secondary-text); font-size:0.92rem;">LMS Portal • New User Onboarding & School Verification</p>
+    </div>
+
+    <!-- Active Form Container -->
+    <div id="register-form-wrap">
+      
+      <!-- Role Selection Toggle -->
+      <label style="display:block; font-weight:800; font-size:0.9rem; margin-bottom:8px; color:var(--dark-text);">
+        Step 1: Choose Your Account Type
+      </label>
+      <div class="role-selection-box">
+        <div class="role-option-card student active" id="card-role-student" onclick="setRole('student')">
+          <div class="icon-wrap"><i class="fa-solid fa-user-graduate"></i></div>
+          <div class="title">Student</div>
+          <div class="desc">Pupil enrollment & academic portal</div>
+        </div>
+        <div class="role-option-card teacher" id="card-role-teacher" onclick="setRole('teacher')">
+          <div class="icon-wrap"><i class="fa-solid fa-chalkboard-user"></i></div>
+          <div class="title">Teacher</div>
+          <div class="desc">Collegiate educator & curriculum staff</div>
+        </div>
+      </div>
+
+      <form id="reg-form" onsubmit="handleRegistrationSubmit(event)">
+        
+        <div class="form-group">
+          <label>Full Name *</label>
+          <input type="text" class="clay-input" id="reg-name" required placeholder="e.g. Master Alex Fernando / Mr. Sunil Perera">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>School or Personal Email *</label>
+            <input type="email" class="clay-input" id="reg-email" required placeholder="alex@stmarys.lk or your.name@gmail.com">
+          </div>
+          <div class="form-group">
+            <label id="lbl-phone-id">Student Admission ID / Phone *</label>
+            <input type="text" class="clay-input" id="reg-phone-id" required placeholder="e.g. STU2026-045 or +94 77 123 4567">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Password (min 6 characters) *</label>
+            <div style="position:relative;">
+              <input type="password" class="clay-input" id="reg-pass" required placeholder="••••••••" minlength="6">
+              <i class="fa-solid fa-eye" style="position:absolute; right:14px; top:50%; transform:translateY(-50%); cursor:pointer; color:var(--secondary-text);" onclick="togglePass('reg-pass')"></i>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Confirm Password *</label>
+            <div style="position:relative;">
+              <input type="password" class="clay-input" id="reg-confirm-pass" required placeholder="••••••••" minlength="6">
+              <i class="fa-solid fa-eye" style="position:absolute; right:14px; top:50%; transform:translateY(-50%); cursor:pointer; color:var(--secondary-text);" onclick="togglePass('reg-confirm-pass')"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mandatory Profile Photo Upload Section -->
+        <div class="form-group" style="margin-top:6px;">
+          <label style="display:flex; justify-content:space-between; align-items:center;">
+            <span>Profile Photo Upload *</span>
+            <span class="clay-badge badge-pink" style="font-size:0.72rem;">Required for Verification</span>
+          </label>
+
+          <!-- Warning Notice Required by Specifications -->
+          <div class="photo-notice-box">
+            <i class="fa-solid fa-shield-halved"></i>
+            <div>
+              <strong>School Verification Notice:</strong> Please upload a clear, real photo of yourself for school verification. Rev. Fr. Principal Ranjith will inspect this photo before approving your account.
+            </div>
+          </div>
+
+          <!-- Interactive Upload Dropzone -->
+          <div class="avatar-upload-container" id="avatar-dropzone">
+            <div class="avatar-preview-circle" id="avatar-preview-box">
+              <i class="fa-solid fa-user" id="avatar-placeholder-icon"></i>
+              <img id="avatar-preview-img" style="display:none;" alt="Candidate Photo">
+            </div>
+            <div class="avatar-upload-actions">
+              <input type="file" id="avatar-file-input" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" class="clay-btn clay-btn-secondary" style="padding:6px 14px; font-size:0.85rem;" onclick="document.getElementById('avatar-file-input').click()">
+                  <i class="fa-solid fa-camera"></i> <span id="avatar-btn-text">Upload Clear Photo</span>
+                </button>
+                <button type="button" class="table-btn table-btn-delete" id="avatar-remove-btn" style="display:none;" onclick="clearAvatar()">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </div>
+              <div style="font-size:0.75rem; color:var(--secondary-text); margin-top:6px;">
+                JPEG, PNG, or WEBP (Max 5MB). Photo must show clear face.
+              </div>
+              
+              <!-- Fast testing demo photo helpers -->
+              <div style="margin-top:8px;">
+                <span style="font-size:0.74rem; font-weight:700; color:var(--secondary-text);">Testing Samples:</span>
+                <span class="sample-pill" onclick="useSamplePhoto('student')">👨‍🎓 Student Sample</span>
+                <span class="sample-pill" onclick="useSamplePhoto('teacher')">👩‍🏫 Teacher Sample</span>
+              </div>
+            </div>
+          </div>
+          <input type="hidden" id="reg-avatar-data" required>
+        </div>
+
+        <div style="margin:20px 0 24px; font-size:0.85rem; color:var(--dark-text);">
+          <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+            <input type="checkbox" id="terms-check" required style="margin-top:3px;">
+            <span>I certify that all details and the uploaded photograph are authentic and represent my person as an affiliated student or faculty member of St. Mary's College Negombo.</span>
+          </label>
+        </div>
+
+        <button type="submit" class="clay-btn" style="width:100%; justify-content:center; padding:12px; font-size:1.02rem;" id="reg-submit-btn">
+          <i class="fa-solid fa-paper-plane"></i> Submit Registration for Approval
+        </button>
+      </form>
+
+      <div style="text-align:center; margin-top:20px; padding-top:16px; border-top:1px solid #EDF2F9;">
+        <span style="color:var(--secondary-text); font-size:0.88rem;">Already registered with St. Mary's College LMS?</span>
+        <a href="/login" style="color:var(--royal-blue); font-weight:800; text-decoration:none; margin-left:6px; font-size:0.9rem;">Sign In to LMS</a>
+      </div>
+    </div>
+
+    <!-- Post-Submit Success Panel -->
+    <div id="success-panel">
+      <div style="width:84px; height:84px; border-radius:50%; background:#E6F8F0; color:#1E7E34; margin:0 auto 18px; display:flex; align-items:center; justify-content:center; font-size:2.8rem; box-shadow:var(--clay-shadow-out);">
+        <i class="fa-solid fa-envelope-circle-check"></i>
+      </div>
+      <span class="step-badge badge-green"><i class="fa-solid fa-check"></i> Step 1: Registration Form Submitted</span>
+      <h2 style="font-family:'Poppins'; color:var(--royal-blue); font-size:1.6rem; margin-bottom:8px;">Check Your Email to Verify</h2>
+      <p style="color:var(--dark-text); font-size:0.95rem; line-height:1.6; margin-bottom:20px;">
+        A verification link has been dispatched to <strong id="success-email-text" style="color:var(--royal-blue);"></strong> via Resend.
+      </p>
+
+      <div class="clay-card-flat" style="padding:18px; text-align:left; margin-bottom:24px;">
+        <div style="font-weight:800; color:var(--royal-blue); font-size:0.95rem; margin-bottom:10px;"><i class="fa-solid fa-shield-halved"></i> What Happens Next:</div>
+        <div style="display:flex; gap:12px; margin-bottom:12px; align-items:flex-start;">
+          <div style="width:24px; height:24px; border-radius:50%; background:var(--royal-blue); color:white; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:800; flex-shrink:0;">1</div>
+          <div style="font-size:0.88rem; color:var(--dark-text);">
+            <strong>Confirm Your Email:</strong> Click the verification link sent to your inbox to mark your email as verified.
+          </div>
+        </div>
+        <div style="display:flex; gap:12px; align-items:flex-start;">
+          <div style="width:24px; height:24px; border-radius:50%; background:#F39C12; color:white; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:800; flex-shrink:0;">2</div>
+          <div style="font-size:0.88rem; color:var(--dark-text);">
+            <strong>Principal ID Inspection:</strong> Rev. Fr. Principal Ranjith will inspect your uploaded verification photograph in the Principal Admin Dashboard and activate your access.
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Link for Testing Environment -->
+      <div id="test-mode-quick-link" style="display:none; margin-bottom:20px;">
+        <a id="test-verify-anchor" href="#" target="_blank" class="clay-btn clay-btn-success" style="width:100%; justify-content:center;">
+          <i class="fa-solid fa-bolt"></i> Testing Link: Open Email Verification Now
+        </a>
+      </div>
+
+      <div style="display:flex; gap:10px; justify-content:center;">
+        <a href="/login" class="clay-btn" style="flex:1; justify-content:center;">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i> Go to Sign In
+        </a>
+        <button type="button" class="clay-btn clay-btn-secondary" onclick="window.location.reload()">
+          <i class="fa-solid fa-rotate-left"></i> Register Another
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script>
+    let currentRole = 'student';
+
+    function setRole(role) {
+      currentRole = role;
+      document.querySelectorAll('.role-option-card').forEach(c => c.classList.remove('active'));
+      document.getElementById('card-role-' + role).classList.add('active');
+
+      const lbl = document.getElementById('lbl-phone-id');
+      const input = document.getElementById('reg-phone-id');
+      if (role === 'teacher') {
+        lbl.innerText = 'Teacher Staff ID / Contact Number *';
+        input.placeholder = 'e.g. TCH-006 or +94 71 555 0199';
+      } else {
+        lbl.innerText = 'Student Admission ID / Parent Contact *';
+        input.placeholder = 'e.g. STU2026-045 or +94 77 123 4567';
+      }
+    }
+
+    function togglePass(id) {
+      const el = document.getElementById(id);
+      el.type = el.type === 'password' ? 'text' : 'password';
+    }
+
+    function handleFileSelect(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        showToast('error', 'Please select a valid image file (JPEG, PNG, WEBP).');
+        return;
+      }
+      if (file.size > 6 * 1024 * 1024) {
+        showToast('error', 'Image file is too large. Max size is 5MB.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        setAvatar(evt.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function setAvatar(dataUrl) {
+      document.getElementById('reg-avatar-data').value = dataUrl;
+      const previewImg = document.getElementById('avatar-preview-img');
+      const placeholder = document.getElementById('avatar-placeholder-icon');
+      const btnText = document.getElementById('avatar-btn-text');
+      const removeBtn = document.getElementById('avatar-remove-btn');
+      const dropzone = document.getElementById('avatar-dropzone');
+
+      previewImg.src = dataUrl;
+      previewImg.style.display = 'block';
+      placeholder.style.display = 'none';
+      btnText.innerText = 'Change Photo';
+      removeBtn.style.display = 'inline-flex';
+      dropzone.classList.add('has-file');
+    }
+
+    function clearAvatar() {
+      document.getElementById('reg-avatar-data').value = '';
+      document.getElementById('avatar-file-input').value = '';
+      const previewImg = document.getElementById('avatar-preview-img');
+      const placeholder = document.getElementById('avatar-placeholder-icon');
+      const btnText = document.getElementById('avatar-btn-text');
+      const removeBtn = document.getElementById('avatar-remove-btn');
+      const dropzone = document.getElementById('avatar-dropzone');
+
+      previewImg.src = '';
+      previewImg.style.display = 'none';
+      placeholder.style.display = 'block';
+      btnText.innerText = 'Upload Clear Photo';
+      removeBtn.style.display = 'none';
+      dropzone.classList.remove('has-file');
+    }
+
+    function useSamplePhoto(type) {
+      if (type === 'student') {
+        setAvatar('https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&fit=crop&crop=faces');
+      } else {
+        setAvatar('https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&fit=crop&crop=faces');
+      }
+      showToast('success', 'Loaded clear verification portrait sample');
+    }
+
+    async function handleRegistrationSubmit(e) {
+      e.preventDefault();
+      const pass = document.getElementById('reg-pass').value;
+      const confirmPass = document.getElementById('reg-confirm-pass').value;
+      const avatar = document.getElementById('reg-avatar-data').value;
+
+      if (pass !== confirmPass) {
+        showToast('error', 'Passwords do not match. Please re-enter.');
+        return;
+      }
+
+      if (!avatar) {
+        showToast('error', 'Please upload a clear, real photo of yourself for school verification.');
+        document.getElementById('avatar-dropzone').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      const btn = document.getElementById('reg-submit-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting Application...';
+
+      const payload = {
+        role: currentRole,
+        fullName: document.getElementById('reg-name').value.trim(),
+        email: document.getElementById('reg-email').value.trim(),
+        phoneOrId: document.getElementById('reg-phone-id').value.trim(),
+        password: pass,
+        avatar
+      };
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.success) {
+          document.getElementById('register-form-wrap').style.display = 'none';
+          document.getElementById('success-email-text').innerText = payload.email;
+          document.getElementById('success-panel').style.display = 'block';
+
+          if (json.data && json.data.previewVerificationUrl) {
+            const testBox = document.getElementById('test-mode-quick-link');
+            const anchor = document.getElementById('test-verify-anchor');
+            anchor.href = json.data.previewVerificationUrl;
+            testBox.style.display = 'block';
+          }
+          showToast('success', 'Registration submitted! Please verify your email.');
+        } else {
+          showToast('error', json.message || 'Registration failed');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Registration for Approval';
+        }
+      } catch (err) {
+        showToast('error', err.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Registration for Approval';
+      }
+    }
+
+    function showToast(type, msg) {
+      const c = document.getElementById('toast-container');
+      const t = document.createElement('div');
+      t.className = 'toast ' + type;
+      t.innerHTML = '<span>' + msg + '</span>';
+      c.appendChild(t);
+      setTimeout(() => t.remove(), 4000);
+    }
+  </script>
+</body>
+</html>`;
+}
+
+// -------------------------------------------------------------
+// EMAIL VERIFICATION RESULT PAGE RENDERER
+// -------------------------------------------------------------
+function renderVerificationResultPage({ success, title, userName, userRole, userEmail, message }) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title || 'Email Verification'} | St. Mary's College Negombo LMS</title>
+  ${CLAY_BASE_STYLES}
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .result-card {
+      max-width: 540px;
+      width: 100%;
+      padding: clamp(24px, 5vw, 40px);
+      background: white;
+      text-align: center;
+      border-radius: 28px;
+    }
+  </style>
+</head>
+<body>
+  <div class="clay-card result-card">
+    <div style="width:84px; height:84px; border-radius:50%; margin:0 auto 20px; display:flex; align-items:center; justify-content:center; font-size:2.6rem; box-shadow:var(--clay-shadow-out); background:${success ? '#E6F8F0; color:#1E7E34;' : '#FDE8EF; color:#E83E8C;'}">
+      <i class="fa-solid ${success ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
+    </div>
+
+    <span class="clay-badge ${success ? 'badge-green' : 'badge-pink'}" style="margin-bottom:12px;">
+      ${success ? 'Step 1 Complete: Email Verified' : 'Verification Issue'}
+    </span>
+
+    <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:12px; font-size:clamp(1.3rem, 3.5vw, 1.6rem);">
+      ${title}
+    </h2>
+
+    ${userName ? `
+      <div style="font-weight:700; color:var(--dark-text); font-size:1.05rem; margin-bottom:6px;">
+        ${userName} <span class="clay-badge badge-blue" style="font-size:0.75rem; vertical-align:middle;">${userRole === 'teacher' ? 'Faculty Teacher' : 'Student'}</span>
+      </div>
+    ` : ''}
+
+    <p style="color:var(--dark-text); font-size:0.95rem; line-height:1.6; margin-bottom:24px;">
+      ${message}
+    </p>
+
+    ${success ? `
+      <div class="clay-card-flat" style="padding:16px; text-align:left; margin-bottom:24px; border-left:4px solid #F39C12;">
+        <div style="font-weight:800; color:#B78103; font-size:0.9rem; margin-bottom:6px;">
+          <i class="fa-solid fa-clock-rotate-left"></i> Account Status: Pending Principal Approval
+        </div>
+        <p style="font-size:0.84rem; color:var(--secondary-text); line-height:1.5;">
+          Rev. Fr. Principal Ranjith reviews all student and faculty registrations to verify school affiliation and inspect uploaded verification ID photos. You will be able to log in as soon as approval is granted.
+        </p>
+      </div>
+    ` : ''}
+
+    <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+      <a href="/login" class="clay-btn" style="flex:1; min-width:180px; justify-content:center;">
+        <i class="fa-solid fa-arrow-right-to-bracket"></i> Go to Sign In
+      </a>
+      ${!success ? `
+        <a href="/register" class="clay-btn clay-btn-secondary" style="flex:1; min-width:180px; justify-content:center;">
+          <i class="fa-solid fa-rotate-right"></i> Register Again
+        </a>
+      ` : ''}
+    </div>
+  </div>
 </body>
 </html>`;
 }
@@ -3986,17 +5531,61 @@ function renderTeacherDashboard(user) {
 </html>`;
 }
 
-function renderUnauthorizedPage() {
+function renderUnauthorizedPage(user = { role: 'guest' }, targetDashboard = '/login') {
+  const roleDisplay = user.role === 'student' ? 'Student' : user.role === 'teacher' ? 'Faculty Educator' : user.role === 'principal' ? 'Rev. Fr. Principal' : 'User';
   return `<!DOCTYPE html>
-<html>
-<head><title>403 Forbidden | St. Mary's College Negombo</title>${CLAY_BASE_STYLES}</head>
-<body style="display:flex; align-items:center; justify-content:center; height:100vh; text-align:center;">
-  <div class="clay-card" style="padding:40px; max-width:440px;">
-    <div style="font-size:3rem; color:#E83E8C; margin-bottom:12px;"><i class="fa-solid fa-lock"></i></div>
-    <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:8px;">Access Denied (403)</h2>
-    <p style="color:var(--secondary-text); margin-bottom:20px;">You are not authorized to view this restricted area.</p>
-    <a href="/login" class="clay-btn"><i class="fa-solid fa-arrow-left"></i> Sign in with Authorized Role</a>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>403 Forbidden | St. Mary's College Negombo</title>
+  ${CLAY_BASE_STYLES}
+  <script>
+    (function() {
+      var dest = '${targetDashboard}';
+      try {
+        var token = localStorage.getItem('stmarys_token');
+        if (token && dest.indexOf('token=') === -1) {
+          var sep = dest.indexOf('?') !== -1 ? '&' : '?';
+          dest = dest + sep + 'token=' + encodeURIComponent(token);
+        }
+      } catch(_) {}
+      setTimeout(function() {
+        window.location.replace(dest);
+      }, 2000);
+    })();
+  </script>
+</head>
+<body style="display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; text-align:center; background:#F3F6FF;">
+  <div class="clay-card" style="padding:42px 32px; max-width:500px; width:100%;">
+    <div style="width:80px; height:80px; border-radius:50%; background:#FDE8EF; color:#E83E8C; margin:0 auto 18px; display:flex; align-items:center; justify-content:center; font-size:2.8rem; box-shadow:var(--clay-shadow-out);">
+      <i class="fa-solid fa-user-shield"></i>
+    </div>
+    <span class="clay-badge badge-pink" style="margin-bottom:12px;"><i class="fa-solid fa-lock"></i> HTTP 403 Forbidden</span>
+    <h2 style="font-family:'Poppins'; color:var(--royal-blue); margin-bottom:8px; font-size:1.6rem;">Unauthorized Route Access</h2>
+    <p style="color:var(--dark-text); font-size:0.95rem; line-height:1.6; margin-bottom:16px;">
+      You are authenticated as <strong>${escapeHtml(user.name || 'User')} (${roleDisplay})</strong>. Your account role does not have authorization to access this restricted route.
+    </p>
+    <div style="background:#F8FAFF; border:1px solid #E6EEFA; border-radius:14px; padding:12px; margin-bottom:24px; font-size:0.85rem; color:var(--secondary-text);">
+      <i class="fa-solid fa-rotate fa-spin" style="color:var(--royal-blue); margin-right:6px;"></i> Automatically redirecting you to your assigned dashboard in 2 seconds...
+    </div>
+    <a id="unauth-redirect-btn" href="${targetDashboard}" class="clay-btn" style="width:100%; justify-content:center;">
+      <i class="fa-solid fa-gauge"></i> Go to My Dashboard (${roleDisplay})
+    </a>
   </div>
+  <script>
+    (function() {
+      var btn = document.getElementById('unauth-redirect-btn');
+      if (btn) {
+        try {
+          var token = localStorage.getItem('stmarys_token');
+          if (token && btn.href.indexOf('token=') === -1) {
+            var sep = btn.href.indexOf('?') !== -1 ? '&' : '?';
+            btn.href = btn.href + sep + 'token=' + encodeURIComponent(token);
+          }
+        } catch(_) {}
+      }
+    })();
+  </script>
 </body>
 </html>`;
 }
